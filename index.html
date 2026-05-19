@@ -80,7 +80,7 @@ const DEFAULT_AFFIRMATIONS=[
   "Rest is productive. Joy is strategy.",
 ];
 
-// ── STORAGE (localStorage + Google Sheets sync) ─────
+// ── STORAGE (localStorage + Google Sheets via JSONP) ─
 const store={
   _url:localStorage.getItem("chelahq_syncurl")||"",
   get(key,def=null){
@@ -91,9 +91,11 @@ const store={
     try{
       const str=JSON.stringify(val);
       localStorage.setItem("chelahq_"+key,str);
+      // Write to Google Sheets via no-cors (fire and forget)
       if(this._url){
         fetch(this._url,{
           method:"POST",
+          mode:"no-cors",
           headers:{"Content-Type":"text/plain"},
           body:JSON.stringify({key:"chelahq_"+key,value:str})
         }).catch(()=>{});
@@ -104,19 +106,38 @@ const store={
     this._url=url;
     localStorage.setItem("chelahq_syncurl",url);
   },
-  async syncAll(){
-    if(!this._url)return{ok:false,msg:"No sync URL set."};
-    try{
-      const r=await fetch(this._url+"?action=getAll",{cache:"no-cache"});
-      const data=await r.json();
-      if(data.success&&data.data){
-        Object.entries(data.data).forEach(([k,v])=>{
-          if(k.startsWith("chelahq_"))localStorage.setItem(k,v);
-        });
-        return{ok:true,msg:`Synced ${Object.keys(data.data).length} items from cloud. Reload to see latest data.`};
-      }
-      return{ok:false,msg:"Sync failed: "+JSON.stringify(data)};
-    }catch(e){return{ok:false,msg:"Sync error: "+e.message};}
+  // Use JSONP to bypass CORS for reads
+  syncAll(){
+    if(!this._url)return Promise.resolve({ok:false,msg:"No sync URL set."});
+    return new Promise((resolve)=>{
+      const cbName="chelahq_cb_"+Date.now();
+      const timeoutId=setTimeout(()=>{
+        delete window[cbName];
+        if(s.parentNode)s.parentNode.removeChild(s);
+        resolve({ok:false,msg:"Timed out. Make sure your URL ends in /exec and is deployed as Anyone."});
+      },12000);
+      window[cbName]=(data)=>{
+        clearTimeout(timeoutId);
+        delete window[cbName];
+        if(s.parentNode)s.parentNode.removeChild(s);
+        if(data.success&&data.data){
+          Object.entries(data.data).forEach(([k,v])=>{
+            if(k.startsWith("chelahq_"))localStorage.setItem(k,v);
+          });
+          resolve({ok:true,msg:"Synced "+Object.keys(data.data).length+" items! Reloading in 2 seconds…"});
+        }else{
+          resolve({ok:false,msg:"Sync failed: "+JSON.stringify(data)});
+        }
+      };
+      const s=document.createElement("script");
+      s.src=this._url+"?action=getAll&callback="+cbName;
+      s.onerror=()=>{
+        clearTimeout(timeoutId);
+        delete window[cbName];
+        resolve({ok:false,msg:"Could not reach URL. Check it's correct and redeployed."});
+      };
+      document.head.appendChild(s);
+    });
   }
 };
 
