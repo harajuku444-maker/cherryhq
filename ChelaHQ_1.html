@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Chela HQ. ✦</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;900&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&family=Syne:wght@700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{background:#FDF8F5;font-family:'DM Sans','Helvetica Neue',sans-serif;min-height:100vh;}
+input[type=range]{width:100%;accent-color:#EAA8C2;}
+input[type=checkbox]{accent-color:#EAA8C2;}
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:rgba(0,0,0,0.04);}
+::-webkit-scrollbar-thumb{background:#EAA8C2;border-radius:3px;}
+details summary{list-style:none;}
+details summary::-webkit-details-marker{display:none;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback}=React;
+
+// ── COLORS ──────────────────────────────────────────────
+const C={
+  pink:"#F5C5D8",pinkMed:"#EAA8C2",pinkDeep:"#C4688A",
+  lav:"#DDD8F8",lavMed:"#C3C0DB",lavDeep:"#8870C0",
+  mint:"#C4EAD8",mintMed:"#7DBFA0",mintDeep:"#2E8060",
+  peach:"#FAD8C0",peachMed:"#E8A878",
+  yellow:"#FFF3B0",yellowMed:"#C8A800",
+  blue:"#C4DCFA",blueMed:"#78A8E0",blueDeep:"#2860B0",
+  rose:"#F5C4D4",roseMed:"#D87898",
+  lilac:"#DFC8F5",lilacMed:"#A870D8",lilacDeep:"#6830A0",
+  charcoal:"#1A1A1A",gray:"#888",lgray:"#E8E8E8",
+  cream:"#FDF8F5",white:"#fff",
+};
+
+const TABS=[
+  {id:"hq",      emoji:"✦",label:"Chela HQ",           color:C.pink,  dark:C.pinkMed, content:"#FFF0F6"},
+  {id:"tasks",   emoji:"✔",label:"Tasks for the Doll",  color:C.mint,  dark:C.mintMed, content:"#F0FBF6"},
+  {id:"projects",emoji:"◈",label:"Projects",            color:C.lav,   dark:C.lavMed,  content:"#F4F0FF"},
+  {id:"money",   emoji:"💸",label:"Money + Invoices",   color:C.peach, dark:C.peachMed,content:"#FFF6F0"},
+  {id:"reset",   emoji:"↻",label:"Reset Studio",        color:C.yellow,dark:C.yellowMed,content:"#FFFDF0"},
+  {id:"bizops",  emoji:"⌘",label:"Biz Ops",             color:C.blue,  dark:C.blueMed, content:"#F0F6FF"},
+  {id:"moodboard",emoji:"✿",label:"Moodboard",          color:C.rose,  dark:C.roseMed, content:"#FFF0F4"},
+  {id:"personal",emoji:"♡",label:"Personal",            color:C.lilac, dark:C.lilacMed,content:"#F8F0FF"},
+];
+
+const AREAS=["C DOT","Gallery","Store","Content","Life","Design","Personal Brand","Admin"];
+const TASK_STATUSES=["Not Started","In Progress","Done","Blocked"];
+const PROJ_STATUSES=["Planning","Active","Paused","Complete","Archived"];
+const INV_STATUSES=["Draft","Sent","Paid","Overdue"];
+const RUNWAY_CATS=["Gallery","Public Art / Advisory","Social Media Content","C DOT.","Personal","Family"];
+const PROJ_TYPES=["Gallery","Public Art","Content","C DOT","Business Dev","Personal","Admin"];
+const PHONE="+12026993787";
+
+const STATUS_COLORS={
+  "Not Started":C.lgray,"In Progress":C.yellow,"Done":C.mint,"Blocked":"#FFBBBB",
+  "Planning":C.lav,"Active":C.mint,"Paused":C.peach,"Complete":"#B8F0C8","Archived":C.lgray,
+  "Draft":C.lgray,"Sent":C.blue,"Paid":"#B8F0C8","Overdue":"#FFBBBB",
+  "Income":"#C0F0D0","Expense":"#FFD0D0",
+};
+
+const DEFAULT_AFFIRMATIONS=[
+  "I am magnetic. Everything I need is drawn to me.",
+  "My art and vision create real impact in the world.",
+  "I build wealth, community, and legacy simultaneously.",
+  "CMA. is exactly where it needs to be today.",
+  "I move with intention. My decisions are powerful.",
+  "My creativity is my currency — and it is limitless.",
+  "I am a sought-after voice in the art world.",
+  "Rest is productive. Joy is strategy.",
+];
+
+// ── STORAGE (localStorage) ────────────────────────────
+const store={
+  get(key,def=null){try{const v=localStorage.getItem("chelahq_"+key);return v!==null?JSON.parse(v):def;}catch{return def;}},
+  set(key,val){try{localStorage.setItem("chelahq_"+key,JSON.stringify(val));}catch(e){console.error(e);}},
+};
+
+// ── UTILS ─────────────────────────────────────────────
+const uid=()=>Math.random().toString(36).slice(2,9);
+const todayStr=()=>new Date().toISOString().slice(0,10);
+const fmtDate=d=>{if(!d)return"—";const dt=new Date(d+"T12:00:00");return isNaN(dt)?d:dt.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});};
+const fmtMoney=n=>"$"+Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+const openSMS=body=>{window.location.href=`sms:${PHONE}?body=${encodeURIComponent(body)}`;};
+const weekLabel=()=>{const d=new Date();const s=new Date(d);s.setDate(d.getDate()-d.getDay());const e=new Date(s);e.setDate(s.getDate()+6);return`${s.toLocaleDateString("en-US",{month:"short",day:"numeric"})} – ${e.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;};
+const getDayAff=list=>list&&list.length?list[new Date().getDay()%list.length]:"";
+
+// ── SHARED UI ─────────────────────────────────────────
+const Sparkle=({size=14,color=C.pinkMed})=>(
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color} style={{flexShrink:0,display:"inline-block"}}>
+    <path d="M12 2l2 8 8 2-8 2-2 8-2-8-8-2 8-2z"/>
+  </svg>
+);
+
+const Btn=({children,onClick,color=C.pinkMed,sm=false,outline=false,style={}})=>(
+  <button onClick={onClick} style={{background:outline?"transparent":color,color:outline?color:"#fff",border:`2px solid ${color}`,borderRadius:20,padding:sm?"4px 12px":"8px 20px",fontSize:sm?11:13,fontWeight:800,cursor:"pointer",letterSpacing:"0.05em",textTransform:"uppercase",fontFamily:"'Barlow Condensed',sans-serif",transition:"all 0.15s",whiteSpace:"nowrap",...style}}>{children}</button>
+);
+
+const Card=({children,style={},color=C.white})=>(
+  <div style={{background:color,borderRadius:14,border:`1.5px solid rgba(0,0,0,0.07)`,padding:20,boxShadow:"0 2px 16px rgba(0,0,0,0.05)",...style}}>{children}</div>
+);
+
+const SecTitle=({children,color=C.pinkDeep,icon=true,style={}})=>(
+  <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:20,textTransform:"uppercase",letterSpacing:"0.07em",color,display:"flex",alignItems:"center",gap:7,marginBottom:14,...style}}>
+    {icon&&<Sparkle color={color}/>}{children}
+  </div>
+);
+
+const Lbl=({children,style={}})=>(
+  <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.18em",textTransform:"uppercase",color:C.gray,marginBottom:4,...style}}>{children}</div>
+);
+
+const Inp=({value,onChange,placeholder,type="text",style={}})=>(
+  <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{border:`1.5px solid rgba(0,0,0,0.1)`,borderRadius:8,padding:"7px 11px",fontSize:13,outline:"none",width:"100%",background:C.white,fontFamily:"inherit",boxSizing:"border-box",...style}}/>
+);
+
+const Sel=({value,onChange,options,style={}})=>(
+  <select value={value} onChange={e=>onChange(e.target.value)} style={{border:`1.5px solid rgba(0,0,0,0.1)`,borderRadius:8,padding:"7px 10px",fontSize:13,outline:"none",background:C.white,fontFamily:"inherit",cursor:"pointer",width:"100%",boxSizing:"border-box",...style}}>
+    <option value="">Select…</option>
+    {options.map(o=><option key={o.v||o} value={o.v||o}>{o.l||o}</option>)}
+  </select>
+);
+
+const Txta=({value,onChange,placeholder,rows=3,style={}})=>(
+  <textarea value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} rows={rows} style={{border:`1.5px solid rgba(0,0,0,0.1)`,borderRadius:8,padding:"8px 11px",fontSize:13,outline:"none",width:"100%",background:C.white,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box",...style}}/>
+);
+
+const StatusTag=({status})=>(
+  <span style={{background:STATUS_COLORS[status]||C.lgray,borderRadius:10,padding:"2px 9px",fontSize:11,fontWeight:700,color:C.charcoal,whiteSpace:"nowrap",letterSpacing:"0.04em"}}>{status}</span>
+);
+
+const ProgressBar=({val,max,color=C.pinkMed})=>{
+  const pct=max>0?Math.min(100,Math.round((val/max)*100)):0;
+  return <div style={{display:"flex",alignItems:"center",gap:10}}>
+    <div style={{flex:1,height:8,background:C.lgray,borderRadius:4,overflow:"hidden"}}><div style={{width:`${pct}%`,height:"100%",background:color,borderRadius:4,transition:"width 0.4s"}}/></div>
+    <span style={{fontSize:12,fontWeight:700,color,minWidth:36}}>{pct}%</span>
+  </div>;
+};
+
+const Modal=({open,onClose,title,children,color=C.pinkMed})=>{
+  if(!open)return null;
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:24}} onClick={onClose}>
+    <div style={{background:C.white,borderRadius:18,padding:32,width:"100%",maxWidth:560,maxHeight:"85vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
+        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:22,textTransform:"uppercase",letterSpacing:"0.05em",color}}>{title}</div>
+        <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:C.gray,lineHeight:1}}>×</button>
+      </div>
+      {children}
+    </div>
+  </div>;
+};
+
+// ── HQ TAB ────────────────────────────────────────────
+function HQTab({tasks,projects,goToTab}){
+  const [quote,setQuote]=useState("I am the dream and the builder.");
+  const [word,setWord]=useState({word:"",meaning:""});
+  const [focus,setFocus]=useState(["","",""]);
+  const [runway,setRunway]=useState(Object.fromEntries(RUNWAY_CATS.map(c=>[c,[]])));
+  const [calUrl,setCalUrl]=useState("");
+  const [calView,setCalView]=useState("WEEK");
+  const [editQ,setEditQ]=useState(false);
+  const [editW,setEditW]=useState(false);
+  const [runwayItem,setRunwayItem]=useState({cat:"",text:""});
+  const [inited,setInited]=useState(false);
+
+  useEffect(()=>{
+    setQuote(store.get("hq_quote","I am the dream and the builder."));
+    setWord(store.get("hq_word",{word:"",meaning:""}));
+    setFocus(store.get("hq_focus",["","",""]));
+    setRunway(store.get("hq_runway",Object.fromEntries(RUNWAY_CATS.map(c=>[c,[]]))));
+    setCalUrl(store.get("hq_calurl",""));
+    setInited(true);
+  },[]);
+
+  useEffect(()=>{if(inited){store.set("hq_quote",quote);}},[quote,inited]);
+  useEffect(()=>{if(inited){store.set("hq_word",word);}},[word,inited]);
+  useEffect(()=>{if(inited){store.set("hq_focus",focus);}},[focus,inited]);
+  useEffect(()=>{if(inited){store.set("hq_runway",runway);}},[runway,inited]);
+  useEffect(()=>{if(inited){store.set("hq_calurl",calUrl);}},[calUrl,inited]);
+
+  const dueToday=tasks.filter(t=>t.finishBy===todayStr()&&t.status!=="Done");
+  const todayAff=getDayAff(DEFAULT_AFFIRMATIONS);
+  const now=new Date();
+  const timeStr=now.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",hour12:true});
+  const dateStr=now.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"});
+
+  const addRunwayItem=()=>{
+    if(!runwayItem.cat||!runwayItem.text.trim())return;
+    const updated={...runway,[runwayItem.cat]:[...(runway[runwayItem.cat]||[]),{id:uid(),text:runwayItem.text,done:false}]};
+    setRunway(updated);
+    setRunwayItem({cat:"",text:""});
+  };
+  const toggleRunway=(cat,id)=>setRunway(r=>({...r,[cat]:r[cat].map(i=>i.id===id?{...i,done:!i.done}:i)}));
+  const removeRunway=(cat,id)=>setRunway(r=>({...r,[cat]:(r[cat]||[]).filter(i=>i.id!==id)}));
+
+  const briefingText=()=>{
+    const f=focus.filter(Boolean);
+    const d=dueToday.map(t=>`• ${t.task}`).join("\n");
+    return `✦ Good morning, Chela! ✦\n\nToday's Focus:\n${f.map((g,i)=>`${i+1}. ${g}`).join("\n")}\n\n${d?`Due Today:\n${d}\n\n`:""}${todayAff}\n\n— CMA. HQ`;
+  };
+
+  const embedSrc=calUrl?`${calUrl.includes("?")?calUrl.split("&mode=")[0]:calUrl}&mode=${calView}&showTitle=0&showNav=1&showDate=1&showPrint=0&showTabs=0&showCalendars=0&bgcolor=%23FDF8F5`:"";
+
+  return <div style={{display:"flex",flexDirection:"column",gap:24}}>
+    {/* Header */}
+    <div style={{background:`linear-gradient(135deg,${C.pink} 0%,${C.lav} 100%)`,borderRadius:14,padding:"28px 32px",position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",top:12,right:20,opacity:0.12}}><Sparkle size={80} color={C.white}/></div>
+      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:13,letterSpacing:"0.2em",textTransform:"uppercase",color:C.pinkDeep,marginBottom:4}}>✦ Welcome back ✦</div>
+      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:42,textTransform:"uppercase",letterSpacing:"-0.01em",color:C.charcoal,lineHeight:0.95}}>Chela HQ.</div>
+      <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:13,color:"rgba(0,0,0,0.5)",marginTop:8}}>{dateStr} · {timeStr}</div>
+    </div>
+
+    {/* Quote + Word */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+      <Card color={C.pink}>
+        <SecTitle color={C.pinkDeep} style={{marginBottom:10}}>Today's Inspiration</SecTitle>
+        {editQ?<div style={{display:"flex",flexDirection:"column",gap:8}}><Txta value={quote} onChange={setQuote} rows={3}/><Btn sm color={C.pinkMed} onClick={()=>setEditQ(false)}>Save</Btn></div>
+        :<div><div style={{fontFamily:"Georgia,serif",fontSize:17,fontStyle:"italic",color:C.charcoal,lineHeight:1.6,marginBottom:12}}>"{quote}"</div><Btn sm outline color={C.pinkDeep} onClick={()=>setEditQ(true)}>Edit Quote</Btn></div>}
+      </Card>
+      <Card color={C.lav}>
+        <SecTitle color={C.lavDeep} style={{marginBottom:10}}>Word of the Day</SecTitle>
+        {editW?<div style={{display:"flex",flexDirection:"column",gap:8}}><Inp value={word.word} onChange={v=>setWord({...word,word:v})} placeholder="Word"/><Inp value={word.meaning} onChange={v=>setWord({...word,meaning:v})} placeholder="Meaning or intention"/><Btn sm color={C.lavMed} onClick={()=>setEditW(false)}>Save</Btn></div>
+        :<div><div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:28,textTransform:"uppercase",color:C.lavDeep,marginBottom:6}}>{word.word||"Set your word…"}</div><div style={{fontSize:14,color:C.charcoal,lineHeight:1.5,marginBottom:12}}>{word.meaning||<span style={{color:C.gray,fontStyle:"italic"}}>Add a meaning or intention</span>}</div><Btn sm outline color={C.lavDeep} onClick={()=>setEditW(true)}>Edit</Btn></div>}
+      </Card>
+    </div>
+
+    {/* Today's Focus */}
+    <Card>
+      <SecTitle color={C.pinkDeep} style={{marginBottom:16}}>Today's Focus <span style={{fontSize:13,fontWeight:400,letterSpacing:0,textTransform:"none",fontFamily:"inherit",color:C.gray}}>— your big three</span></SecTitle>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+        {focus.map((g,i)=>(
+          <div key={i} style={{background:i===0?C.pink:i===1?C.lav:C.mint,borderRadius:12,padding:16,position:"relative"}}>
+            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:32,color:"rgba(0,0,0,0.07)",position:"absolute",top:8,right:12,lineHeight:1}}>{i+1}</div>
+            <Lbl style={{color:"rgba(0,0,0,0.4)",marginBottom:8}}>Goal {i+1}</Lbl>
+            <textarea value={g} onChange={e=>{const nf=[...focus];nf[i]=e.target.value;setFocus(nf);}} placeholder={["Biggest goal today…","Second priority…","Third priority…"][i]} rows={3} style={{background:"rgba(255,255,255,0.6)",border:"1.5px solid rgba(0,0,0,0.08)",borderRadius:8,padding:"8px 10px",fontSize:13,width:"100%",resize:"none",outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+          </div>
+        ))}
+      </div>
+    </Card>
+
+    {/* Runway */}
+    <Card>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+        <SecTitle color={C.pinkDeep} style={{marginBottom:0}}>This Week's Runway <span style={{fontSize:12,fontWeight:400,color:C.gray,textTransform:"none",letterSpacing:0,fontFamily:"inherit"}}>{weekLabel()}</span></SecTitle>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <Sel value={runwayItem.cat} onChange={v=>setRunwayItem({...runwayItem,cat:v})} options={RUNWAY_CATS} style={{width:200}}/>
+          <Inp value={runwayItem.text} onChange={v=>setRunwayItem({...runwayItem,text:v})} placeholder="Add priority…" style={{width:200}}/>
+          <Btn sm color={C.pinkMed} onClick={addRunwayItem}>+ Add</Btn>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+        {RUNWAY_CATS.map((cat,ci)=>{
+          const cols=[C.pink,C.lav,C.mint,C.peach,C.yellow,C.blue];
+          const col=cols[ci%cols.length];
+          const items=runway[cat]||[];
+          return <div key={cat} style={{background:col+"44",borderRadius:10,padding:14,borderTop:`3px solid ${col}`}}>
+            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,fontSize:14,textTransform:"uppercase",letterSpacing:"0.06em",color:C.charcoal,marginBottom:10}}>{cat}</div>
+            {items.length===0&&<div style={{fontSize:12,color:C.gray,fontStyle:"italic"}}>No priorities yet</div>}
+            {items.map(item=><div key={item.id} style={{display:"flex",alignItems:"flex-start",gap:6,marginBottom:6}}>
+              <input type="checkbox" checked={item.done} onChange={()=>toggleRunway(cat,item.id)} style={{marginTop:3,flexShrink:0}}/>
+              <span style={{fontSize:13,flex:1,color:item.done?"#aaa":C.charcoal,textDecoration:item.done?"line-through":"none",lineHeight:1.4}}>{item.text}</span>
+              <button onClick={()=>removeRunway(cat,item.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#ccc",fontSize:14,lineHeight:1,padding:0,flexShrink:0}}>×</button>
+            </div>)}
+          </div>;
+        })}
+      </div>
+    </Card>
+
+    {/* Calendar */}
+    <Card>
+      <SecTitle color={C.pinkDeep} style={{marginBottom:12}}>Calendar</SecTitle>
+      <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
+        {["DAY","WEEK","MONTH"].map(v=><button key={v} onClick={()=>setCalView(v)} style={{padding:"6px 16px",borderRadius:20,border:`2px solid ${C.pinkMed}`,background:calView===v?C.pinkMed:"transparent",color:calView===v?"#fff":C.pinkMed,fontWeight:800,fontSize:11,letterSpacing:"0.1em",cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>{v}</button>)}
+        <div style={{flex:1,minWidth:200}}><Inp value={calUrl} onChange={setCalUrl} placeholder="Paste Google Calendar embed URL (src='' value)…" style={{fontSize:11}}/></div>
+      </div>
+      {embedSrc?<iframe src={embedSrc} style={{width:"100%",height:500,border:"none",borderRadius:10}} title="Google Calendar"/>
+      :<div style={{background:C.lgray,borderRadius:10,padding:40,textAlign:"center"}}>
+        <div style={{fontSize:13,color:C.gray,marginBottom:8}}>To embed your Google Calendar:</div>
+        <div style={{fontSize:12,color:C.gray,lineHeight:1.7,maxWidth:480,margin:"0 auto"}}>Go to <strong>calendar.google.com</strong> → Settings → your calendar → "Integrate Calendar" → Copy the embed code URL (the <code>src=""</code> value) → Paste above.</div>
+      </div>}
+    </Card>
+
+    {/* Briefing */}
+    <Card color={C.charcoal}>
+      <SecTitle color={C.pinkMed} style={{marginBottom:12}}>Daily Briefing Text <span style={{fontSize:12,fontWeight:400,color:"rgba(255,255,255,0.4)",textTransform:"none",letterSpacing:0,fontFamily:"inherit"}}>→ {PHONE}</span></SecTitle>
+      <div style={{background:"rgba(255,255,255,0.06)",borderRadius:10,padding:16,marginBottom:14,fontFamily:"monospace",fontSize:12,color:"rgba(255,255,255,0.8)",lineHeight:1.7,whiteSpace:"pre-wrap"}}>{briefingText()}</div>
+      <Btn color={C.pinkMed} onClick={()=>openSMS(briefingText())}>📱 Open in Messages</Btn>
+    </Card>
+  </div>;
+}
+
+// ── TASKS TAB ─────────────────────────────────────────
+function TasksTab({tasks,setTasks,projects,goToTab}){
+  const [modal,setModal]=useState(false);
+  const [editing,setEditing]=useState(null);
+  const [filterArea,setFilterArea]=useState("");
+  const [filterStatus,setFilterStatus]=useState("");
+  const [form,setForm]=useState({task:"",status:"Not Started",area:"",finishBy:"",projectId:"",notes:""});
+
+  const openNew=()=>{setForm({task:"",status:"Not Started",area:"",finishBy:"",projectId:"",notes:""});setEditing(null);setModal(true);};
+  const openEdit=t=>{setForm({...t});setEditing(t.id);setModal(true);};
+  const save=()=>{if(!form.task.trim())return;if(editing)setTasks(ts=>ts.map(t=>t.id===editing?{...t,...form}:t));else setTasks(ts=>[...ts,{...form,id:uid(),created:todayStr()}]);setModal(false);};
+  const del=id=>setTasks(ts=>ts.filter(t=>t.id!==id));
+
+  const filtered=tasks.filter(t=>{
+    if(filterArea&&t.area!==filterArea)return false;
+    if(filterStatus&&t.status!==filterStatus)return false;
+    return true;
+  });
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
+      <SecTitle color={C.mintDeep}>Tasks for the Doll ✔</SecTitle>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <Sel value={filterArea} onChange={setFilterArea} options={[{v:"",l:"All Areas"},...AREAS]} style={{width:150}}/>
+        <Sel value={filterStatus} onChange={setFilterStatus} options={[{v:"",l:"All Status"},...TASK_STATUSES]} style={{width:150}}/>
+        <Btn color={C.mintMed} onClick={openNew}>+ New Task</Btn>
+      </div>
+    </div>
+    <div style={{background:C.white,borderRadius:12,overflow:"hidden",border:`1.5px solid rgba(0,0,0,0.07)`}}>
+      <div style={{display:"grid",gridTemplateColumns:"2fr 110px 130px 110px 130px 40px",background:C.mint,padding:"10px 16px",fontSize:11,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:C.mintDeep}}>
+        <span>Task</span><span>Status</span><span>Area</span><span>Finish By</span><span>Project</span><span></span>
+      </div>
+      {filtered.length===0&&<div style={{padding:32,textAlign:"center",color:C.gray,fontStyle:"italic",fontSize:14}}>No tasks yet. The doll rests. ✦</div>}
+      {filtered.map((t,i)=>{
+        const proj=projects.find(p=>p.id===t.projectId);
+        return <div key={t.id} style={{display:"grid",gridTemplateColumns:"2fr 110px 130px 110px 130px 40px",padding:"11px 16px",borderBottom:`1px solid ${C.lgray}`,background:i%2===0?C.white:"#F8FFFC",alignItems:"center",cursor:"pointer"}} onClick={()=>openEdit(t)}>
+          <div style={{fontSize:13,color:t.status==="Done"?"#aaa":C.charcoal,textDecoration:t.status==="Done"?"line-through":"none",fontWeight:500,paddingRight:8}}>{t.task}</div>
+          <StatusTag status={t.status}/>
+          <span style={{fontSize:12,color:C.gray}}>{t.area||"—"}</span>
+          <span style={{fontSize:12,color:t.finishBy&&t.finishBy<todayStr()&&t.status!=="Done"?"#E05050":C.gray}}>{fmtDate(t.finishBy)}</span>
+          <span style={{fontSize:12,color:proj?C.mintDeep:C.gray,fontWeight:proj?700:400,cursor:proj?"pointer":"default"}} onClick={proj?e=>{e.stopPropagation();goToTab("projects");}:undefined}>{proj?proj.name:"—"}</span>
+          <button onClick={e=>{e.stopPropagation();del(t.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#ddd",fontSize:16}}>×</button>
+        </div>;
+      })}
+    </div>
+    <div style={{display:"flex",gap:12,marginTop:16,flexWrap:"wrap"}}>
+      {TASK_STATUSES.map(s=>{const n=tasks.filter(t=>t.status===s).length;return<div key={s} style={{background:STATUS_COLORS[s]||C.lgray,borderRadius:10,padding:"5px 12px",fontSize:12,fontWeight:700,color:C.charcoal}}>{s}: {n}</div>;})}
+    </div>
+    <Modal open={modal} onClose={()=>setModal(false)} title={editing?"Edit Task":"New Task"} color={C.mintMed}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div><Lbl>Task</Lbl><Inp value={form.task} onChange={v=>setForm({...form,task:v})} placeholder="What needs to get done?"/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><Lbl>Status</Lbl><Sel value={form.status} onChange={v=>setForm({...form,status:v})} options={TASK_STATUSES}/></div>
+          <div><Lbl>Area</Lbl><Sel value={form.area} onChange={v=>setForm({...form,area:v})} options={AREAS}/></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><Lbl>Finish By</Lbl><Inp type="date" value={form.finishBy} onChange={v=>setForm({...form,finishBy:v})}/></div>
+          <div><Lbl>Project</Lbl><Sel value={form.projectId} onChange={v=>setForm({...form,projectId:v})} options={[{v:"",l:"None"},...projects.map(p=>({v:p.id,l:p.name}))]}/></div>
+        </div>
+        <div><Lbl>Notes</Lbl><Txta value={form.notes} onChange={v=>setForm({...form,notes:v})} placeholder="Any details…" rows={2}/></div>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <Btn outline color={C.gray} sm onClick={()=>setModal(false)}>Cancel</Btn>
+          <Btn color={C.mintMed} onClick={save}>{editing?"Save Changes":"Add Task"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  </div>;
+}
+
+// ── PROJECTS TAB ──────────────────────────────────────
+function ProjectsTab({projects,setProjects}){
+  const [modal,setModal]=useState(false);
+  const [editing,setEditing]=useState(null);
+  const [form,setForm]=useState({name:"",type:"",status:"Planning",startDate:"",endDate:"",notes:""});
+  const openNew=()=>{setForm({name:"",type:"",status:"Planning",startDate:"",endDate:"",notes:""});setEditing(null);setModal(true);};
+  const openEdit=p=>{setForm({...p});setEditing(p.id);setModal(true);};
+  const save=()=>{if(!form.name.trim())return;if(editing)setProjects(ps=>ps.map(p=>p.id===editing?{...p,...form}:p));else setProjects(ps=>[...ps,{...form,id:uid(),created:todayStr()}]);setModal(false);};
+  const del=id=>setProjects(ps=>ps.filter(p=>p.id!==id));
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+      <SecTitle color={C.lavDeep}>Projects ◈</SecTitle>
+      <Btn color={C.lavMed} onClick={openNew}>+ New Project</Btn>
+    </div>
+    {PROJ_STATUSES.filter(s=>s!=="Archived").map(status=>{
+      const ps=projects.filter(p=>p.status===status);
+      if(ps.length===0&&status!=="Active")return null;
+      return <div key={status} style={{marginBottom:24}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}><StatusTag status={status}/><span style={{fontSize:12,color:C.gray,fontWeight:600}}>{ps.length} project{ps.length!==1?"s":""}</span></div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+          {ps.length===0&&<div style={{padding:20,border:`1.5px dashed ${C.lgray}`,borderRadius:12,color:C.gray,fontSize:13,fontStyle:"italic",textAlign:"center"}}>No {status.toLowerCase()} projects</div>}
+          {ps.map(p=><div key={p.id} style={{background:C.white,borderRadius:12,border:`1.5px solid rgba(0,0,0,0.07)`,padding:18,cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.04)",borderLeft:`4px solid ${STATUS_COLORS[p.status]||C.lgray}`}} onClick={()=>openEdit(p)}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+              <div style={{fontWeight:700,fontSize:15,color:C.charcoal,lineHeight:1.3}}>{p.name}</div>
+              <button onClick={e=>{e.stopPropagation();del(p.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#ddd",fontSize:16,lineHeight:1}}>×</button>
+            </div>
+            <div style={{fontSize:12,color:C.lavDeep,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em"}}>{p.type||"—"}</div>
+            <div style={{display:"flex",gap:12,fontSize:11,color:C.gray}}><span>Start: {fmtDate(p.startDate)}</span><span>End: {fmtDate(p.endDate)}</span></div>
+            {p.notes&&<div style={{marginTop:8,fontSize:12,color:"#666",lineHeight:1.5}}>{p.notes}</div>}
+          </div>)}
+        </div>
+      </div>;
+    })}
+    {projects.filter(p=>p.status==="Archived").length>0&&<details style={{marginTop:8}}><summary style={{fontSize:12,color:C.gray,cursor:"pointer",marginBottom:12,userSelect:"none"}}>▶ Show archived ({projects.filter(p=>p.status==="Archived").length})</summary><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:10,marginTop:10}}>{projects.filter(p=>p.status==="Archived").map(p=><div key={p.id} style={{background:C.lgray,borderRadius:10,padding:14,opacity:0.7,cursor:"pointer"}} onClick={()=>openEdit(p)}><div style={{fontWeight:700,fontSize:14}}>{p.name}</div><div style={{fontSize:11,color:C.gray}}>{p.type}</div></div>)}</div></details>}
+    <Modal open={modal} onClose={()=>setModal(false)} title={editing?"Edit Project":"New Project"} color={C.lavMed}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div><Lbl>Project Name</Lbl><Inp value={form.name} onChange={v=>setForm({...form,name:v})} placeholder="Project name"/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><Lbl>Type</Lbl><Sel value={form.type} onChange={v=>setForm({...form,type:v})} options={PROJ_TYPES}/></div>
+          <div><Lbl>Status</Lbl><Sel value={form.status} onChange={v=>setForm({...form,status:v})} options={PROJ_STATUSES}/></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><Lbl>Start Date</Lbl><Inp type="date" value={form.startDate} onChange={v=>setForm({...form,startDate:v})}/></div>
+          <div><Lbl>End Date</Lbl><Inp type="date" value={form.endDate} onChange={v=>setForm({...form,endDate:v})}/></div>
+        </div>
+        <div><Lbl>Notes</Lbl><Txta value={form.notes} onChange={v=>setForm({...form,notes:v})} rows={3} placeholder="Details, links, context…"/></div>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><Btn outline color={C.gray} sm onClick={()=>setModal(false)}>Cancel</Btn><Btn color={C.lavMed} onClick={save}>{editing?"Save":"Add Project"}</Btn></div>
+      </div>
+    </Modal>
+  </div>;
+}
+
+// ── MONEY TAB ─────────────────────────────────────────
+function MoneyTab(){
+  const [money,setMoney]=useState([]);
+  const [savings,setSavings]=useState([]);
+  const [invoices,setInvoices]=useState([]);
+  const [section,setSection]=useState("tracker");
+  const [mModal,setMModal]=useState(false);
+  const [sModal,setSModal]=useState(false);
+  const [iModal,setIModal]=useState(false);
+  const [mForm,setMForm]=useState({date:todayStr(),description:"",type:"Income",amount:"",category:""});
+  const [sForm,setSForm]=useState({name:"",target:"",current:"",notes:""});
+  const [iForm,setIForm]=useState({client:"",description:"",amount:"",dueDate:"",status:"Draft",notes:""});
+  const [editId,setEditId]=useState(null);
+  const [inited,setInited]=useState(false);
+
+  useEffect(()=>{setMoney(store.get("money",[]));setSavings(store.get("savings",[]));setInvoices(store.get("invoices",[]));setInited(true);},[]);
+  useEffect(()=>{if(inited){store.set("money",money);}},[money,inited]);
+  useEffect(()=>{if(inited){store.set("savings",savings);}},[savings,inited]);
+  useEffect(()=>{if(inited){store.set("invoices",invoices);}},[invoices,inited]);
+
+  const totalInc=money.filter(e=>e.type==="Income").reduce((s,e)=>s+Number(e.amount||0),0);
+  const totalExp=money.filter(e=>e.type==="Expense").reduce((s,e)=>s+Number(e.amount||0),0);
+  const bal=totalInc-totalExp;
+
+  const saveMoney=()=>{if(!mForm.description||!mForm.amount)return;if(editId)setMoney(m=>m.map(e=>e.id===editId?{...e,...mForm}:e));else setMoney(m=>[{...mForm,id:uid()},...m]);setMModal(false);setEditId(null);};
+  const saveSavings=()=>{if(!sForm.name)return;if(editId)setSavings(s=>s.map(g=>g.id===editId?{...g,...sForm}:g));else setSavings(s=>[...s,{...sForm,id:uid()}]);setSModal(false);setEditId(null);};
+  const saveInvoice=()=>{if(!iForm.client||!iForm.amount)return;if(editId)setInvoices(v=>v.map(i=>i.id===editId?{...i,...iForm}:i));else setInvoices(v=>[...v,{...iForm,id:uid(),created:todayStr()}]);setIModal(false);setEditId(null);};
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
+      <SecTitle color={C.peachMed}>Money + Invoices 💸</SecTitle>
+      <div style={{display:"flex",gap:6}}>
+        {["tracker","savings","invoices"].map(s=><button key={s} onClick={()=>setSection(s)} style={{padding:"7px 16px",borderRadius:20,border:`2px solid ${C.peachMed}`,background:section===s?C.peachMed:"transparent",color:section===s?"#fff":C.peachMed,fontWeight:800,fontSize:12,letterSpacing:"0.06em",cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>{s}</button>)}
+      </div>
+    </div>
+
+    {section==="tracker"&&<div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:20}}>
+        {[{l:"Total Income",v:fmtMoney(totalInc),c:C.mint,tc:C.mintDeep},{l:"Total Expenses",v:fmtMoney(totalExp),c:C.rose,tc:C.roseMed},{l:"Balance",v:fmtMoney(bal),c:bal>=0?C.mint:C.rose,tc:bal>=0?C.mintDeep:C.roseMed}].map(({l,v,c,tc})=><Card key={l} color={c} style={{textAlign:"center"}}><Lbl style={{color:tc,marginBottom:6}}>{l}</Lbl><div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:30,color:tc}}>{v}</div></Card>)}
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}><Btn color={C.peachMed} sm onClick={()=>{setMForm({date:todayStr(),description:"",type:"Income",amount:"",category:""});setEditId(null);setMModal(true);}}>+ Add Entry</Btn></div>
+      <div style={{background:C.white,borderRadius:12,border:`1.5px solid rgba(0,0,0,0.07)`,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"100px 1fr 110px 110px 40px",background:C.peach,padding:"9px 14px",fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:C.peachMed}}><span>Date</span><span>Description</span><span>Amount</span><span>Type</span><span></span></div>
+        {money.length===0&&<div style={{padding:32,textAlign:"center",color:C.gray,fontStyle:"italic"}}>No entries yet. Let's change that. 💸</div>}
+        {money.slice().sort((a,b)=>(b.date||"").localeCompare(a.date||"")).map((e,i)=><div key={e.id} style={{display:"grid",gridTemplateColumns:"100px 1fr 110px 110px 40px",padding:"10px 14px",borderBottom:`1px solid ${C.lgray}`,background:i%2===0?C.white:"#FFFAF8",alignItems:"center",cursor:"pointer"}} onClick={()=>{setMForm({...e});setEditId(e.id);setMModal(true);}}>
+          <span style={{fontSize:12,color:C.gray}}>{fmtDate(e.date)}</span>
+          <span style={{fontSize:13,color:C.charcoal,fontWeight:500}}>{e.description}</span>
+          <span style={{fontSize:13,fontWeight:700,color:e.type==="Income"?C.mintDeep:C.roseMed}}>{e.type==="Income"?"+":"-"}{fmtMoney(e.amount)}</span>
+          <StatusTag status={e.type}/>
+          <button onClick={ev=>{ev.stopPropagation();setMoney(m=>m.filter(x=>x.id!==e.id));}} style={{background:"none",border:"none",cursor:"pointer",color:"#ddd",fontSize:16}}>×</button>
+        </div>)}
+      </div>
+    </div>}
+
+    {section==="savings"&&<div>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}><Btn color={C.peachMed} sm onClick={()=>{setSForm({name:"",target:"",current:"",notes:""});setEditId(null);setSModal(true);}}>+ New Goal</Btn></div>
+      {savings.length===0&&<div style={{padding:32,textAlign:"center",color:C.gray,fontStyle:"italic",fontSize:14}}>Add your first savings goal. What are you building toward? ✦</div>}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:14}}>
+        {savings.map(g=><Card key={g.id} style={{cursor:"pointer"}} onClick={()=>{setSForm({...g});setEditId(g.id);setSModal(true);}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+            <div style={{fontWeight:700,fontSize:16}}>{g.name}</div>
+            <button onClick={e=>{e.stopPropagation();setSavings(s=>s.filter(x=>x.id!==g.id));}} style={{background:"none",border:"none",cursor:"pointer",color:"#ddd",fontSize:16}}>×</button>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{fontSize:13,color:C.mintDeep,fontWeight:700}}>{fmtMoney(g.current)}</span><span style={{fontSize:12,color:C.gray}}>of {fmtMoney(g.target)}</span></div>
+          <ProgressBar val={Number(g.current||0)} max={Number(g.target||1)} color={C.mintMed}/>
+          {g.notes&&<div style={{fontSize:12,color:C.gray,marginTop:10,lineHeight:1.5}}>{g.notes}</div>}
+        </Card>)}
+      </div>
+    </div>}
+
+    {section==="invoices"&&<div>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}><Btn color={C.peachMed} sm onClick={()=>{setIForm({client:"",description:"",amount:"",dueDate:"",status:"Draft",notes:""});setEditId(null);setIModal(true);}}>+ New Invoice</Btn></div>
+      <div style={{background:C.white,borderRadius:12,border:`1.5px solid rgba(0,0,0,0.07)`,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 100px 110px 90px 40px",background:C.peach,padding:"9px 14px",fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:C.peachMed}}><span>Client</span><span>Description</span><span>Amount</span><span>Due</span><span>Status</span><span></span></div>
+        {invoices.length===0&&<div style={{padding:32,textAlign:"center",color:C.gray,fontStyle:"italic"}}>No invoices yet. Get that bag. 💅</div>}
+        {invoices.map((inv,i)=><div key={inv.id} style={{display:"grid",gridTemplateColumns:"1fr 1fr 100px 110px 90px 40px",padding:"10px 14px",borderBottom:`1px solid ${C.lgray}`,background:i%2===0?C.white:"#FFFAF8",alignItems:"center",cursor:"pointer"}} onClick={()=>{setIForm({...inv});setEditId(inv.id);setIModal(true);}}>
+          <span style={{fontSize:13,fontWeight:700}}>{inv.client}</span>
+          <span style={{fontSize:12,color:C.gray}}>{inv.description}</span>
+          <span style={{fontSize:13,fontWeight:700,color:C.peachMed}}>{fmtMoney(inv.amount)}</span>
+          <span style={{fontSize:12,color:inv.dueDate&&inv.dueDate<todayStr()&&inv.status!=="Paid"?"#E05050":C.gray}}>{fmtDate(inv.dueDate)}</span>
+          <StatusTag status={inv.status}/>
+          <button onClick={e=>{e.stopPropagation();setInvoices(v=>v.filter(x=>x.id!==inv.id));}} style={{background:"none",border:"none",cursor:"pointer",color:"#ddd",fontSize:16}}>×</button>
+        </div>)}
+      </div>
+      <div style={{display:"flex",gap:16,marginTop:14,flexWrap:"wrap"}}>
+        <span style={{fontSize:13,color:C.gray}}>Outstanding: <strong style={{color:C.charcoal}}>{fmtMoney(invoices.filter(i=>i.status==="Sent"||i.status==="Draft").reduce((s,i)=>s+Number(i.amount||0),0))}</strong></span>
+        <span style={{fontSize:13,color:C.gray}}>Paid: <strong style={{color:C.mintDeep}}>{fmtMoney(invoices.filter(i=>i.status==="Paid").reduce((s,i)=>s+Number(i.amount||0),0))}</strong></span>
+      </div>
+    </div>}
+
+    <Modal open={mModal} onClose={()=>setMModal(false)} title="Money Entry" color={C.peachMed}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}><div><Lbl>Date</Lbl><Inp type="date" value={mForm.date} onChange={v=>setMForm({...mForm,date:v})}/></div><div><Lbl>Type</Lbl><Sel value={mForm.type} onChange={v=>setMForm({...mForm,type:v})} options={["Income","Expense"]}/></div></div>
+        <div><Lbl>Description</Lbl><Inp value={mForm.description} onChange={v=>setMForm({...mForm,description:v})} placeholder="What is this for?"/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}><div><Lbl>Amount ($)</Lbl><Inp type="number" value={mForm.amount} onChange={v=>setMForm({...mForm,amount:v})} placeholder="0.00"/></div><div><Lbl>Category</Lbl><Inp value={mForm.category} onChange={v=>setMForm({...mForm,category:v})} placeholder="e.g. Advisory, C DOT"/></div></div>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><Btn outline color={C.gray} sm onClick={()=>setMModal(false)}>Cancel</Btn><Btn color={C.peachMed} onClick={saveMoney}>{editId?"Save":"Add"}</Btn></div>
+      </div>
+    </Modal>
+    <Modal open={sModal} onClose={()=>setSModal(false)} title="Savings Goal" color={C.peachMed}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div><Lbl>Goal Name</Lbl><Inp value={sForm.name} onChange={v=>setSForm({...sForm,name:v})} placeholder="e.g. Gallery Upgrade Fund"/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}><div><Lbl>Target ($)</Lbl><Inp type="number" value={sForm.target} onChange={v=>setSForm({...sForm,target:v})}/></div><div><Lbl>Current ($)</Lbl><Inp type="number" value={sForm.current} onChange={v=>setSForm({...sForm,current:v})}/></div></div>
+        <div><Lbl>Notes</Lbl><Txta value={sForm.notes} onChange={v=>setSForm({...sForm,notes:v})} rows={2} placeholder="Why this goal matters…"/></div>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><Btn outline color={C.gray} sm onClick={()=>setSModal(false)}>Cancel</Btn><Btn color={C.peachMed} onClick={saveSavings}>{editId?"Save":"Add Goal"}</Btn></div>
+      </div>
+    </Modal>
+    <Modal open={iModal} onClose={()=>setIModal(false)} title="Invoice" color={C.peachMed}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}><div><Lbl>Client</Lbl><Inp value={iForm.client} onChange={v=>setIForm({...iForm,client:v})} placeholder="Client name"/></div><div><Lbl>Amount ($)</Lbl><Inp type="number" value={iForm.amount} onChange={v=>setIForm({...iForm,amount:v})}/></div></div>
+        <div><Lbl>Description / Services</Lbl><Inp value={iForm.description} onChange={v=>setIForm({...iForm,description:v})} placeholder="What are you invoicing for?"/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}><div><Lbl>Due Date</Lbl><Inp type="date" value={iForm.dueDate} onChange={v=>setIForm({...iForm,dueDate:v})}/></div><div><Lbl>Status</Lbl><Sel value={iForm.status} onChange={v=>setIForm({...iForm,status:v})} options={INV_STATUSES}/></div></div>
+        <div><Lbl>Notes</Lbl><Txta value={iForm.notes} onChange={v=>setIForm({...iForm,notes:v})} rows={2}/></div>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><Btn outline color={C.gray} sm onClick={()=>setIModal(false)}>Cancel</Btn><Btn color={C.peachMed} onClick={saveInvoice}>{editId?"Save":"Create"}</Btn></div>
+      </div>
+    </Modal>
+  </div>;
+}
+
+// ── RESET STUDIO ──────────────────────────────────────
+// Weekly audit items by category
+const WEEKLY_AUDIT = [
+  {cat:"📥 Inbox + Files", items:[
+    "Get email inbox to zero — archive, delete, or respond",
+    "Clear unnecessary downloads and desktop files",
+    "Move important files to Dropbox or organized folder",
+    "Empty trash / recycle bin",
+    "Clear phone camera roll duplicates / screenshots",
+  ]},
+  {cat:"📅 Calendar", items:[
+    "Review this week — what actually happened vs plan?",
+    "Delete or reschedule any unnecessary upcoming events",
+    "Block focus time and deep work blocks for next week",
+    "Add known deadlines, calls, and commitments",
+    "Check for scheduling conflicts next week",
+  ]},
+  {cat:"✔ Tasks + Projects", items:[
+    "Review full task list — mark anything completed",
+    "Flag overdue tasks and decide: do, delegate, or delete",
+    "Move incomplete tasks forward with new due dates",
+    "Add any new tasks that came up this week",
+    "Check active project statuses — any blockers?",
+  ]},
+  {cat:"💸 Finance", items:[
+    "Log any income or expenses from this week",
+    "Check for any unpaid invoices to follow up on",
+    "Review any upcoming bills or subscriptions due",
+    "Note any money decisions that need to be made",
+  ]},
+  {cat:"🖼 Gallery + Advisory", items:[
+    "Clear gallery-related emails and client messages",
+    "Follow up on any outstanding proposals or RFPs",
+    "Update status on active advisory projects",
+    "Note any artist outreach or collector follow-ups needed",
+  ]},
+  {cat:"📱 Social Media + Content", items:[
+    "Check DMs and comments — respond or acknowledge",
+    "Review posting schedule — what went out this week?",
+    "Note at least 3 content ideas for next week",
+    "Quick analytics check — what performed best?",
+    "Schedule or batch any next-week content",
+  ]},
+  {cat:"👗 C DOT.", items:[
+    "Check any orders, inquiries, or messages",
+    "Review production or vendor status",
+    "Note any product ideas or design directions",
+    "Any C DOT social or content to address?",
+  ]},
+  {cat:"♡ Personal", items:[
+    "Is there a doctor, dental, or health appointment to book?",
+    "Did you hit your gym goal this week?",
+    "Any personal admin (forms, renewals, errands) outstanding?",
+    "Texts or calls to return to family or important people?",
+  ]},
+];
+
+const MONTHLY_AUDIT = [
+  {cat:"📥 Admin Deep Dive", items:[
+    "Full email archive and clean — unsubscribe from junk lists",
+    "Organize Dropbox / Google Drive — delete or consolidate",
+    "Update any important contacts or client info",
+    "Review and renew any business licenses, memberships, subscriptions",
+    "Check NADA membership and any association obligations",
+    "Back up important files and documents",
+  ]},
+  {cat:"📅 Calendar + Planning", items:[
+    "Review last month's calendar vs what actually happened",
+    "Identify recurring time-wasters to eliminate",
+    "Map key dates and deadlines for next month",
+    "Block rest, travel, and personal days in advance",
+    "Schedule monthly reset and weekly review slots",
+  ]},
+  {cat:"💸 Financial Review", items:[
+    "Full income vs expense review for the month",
+    "Invoice all outstanding work — nothing left on the table",
+    "Review savings goals progress",
+    "Check tax documents and set aside estimated tax if owed",
+    "Review and adjust any budget categories",
+    "Check for any subscriptions to cancel or renegotiate",
+  ]},
+  {cat:"🖼 Gallery + Advisory Ops", items:[
+    "Review all active advisory projects and client statuses",
+    "Assess new business pipeline — any proposals to send?",
+    "Follow up with key contacts (Christy Schlesinger, Emalia Tamanikwa)",
+    "Check any open RFPs or grant opportunities",
+    "Review and update your advisory services menu / pricing",
+    "Website or portfolio update needed?",
+  ]},
+  {cat:"🏛 Public Art", items:[
+    "Review public art call deadlines for next 60 days",
+    "Check status on submitted proposals",
+    "Any artist relationships to maintain or build?",
+    "Site visits, community engagement, or project check-ins?",
+  ]},
+  {cat:"📱 Social Media + Content Audit", items:[
+    "Review analytics across Instagram, TikTok, Facebook, YouTube",
+    "Identify your top 3 performing posts and why",
+    "Identify what flopped and adjust strategy",
+    "Plan content pillars and themes for next month",
+    "Check follower growth across all platforms",
+    "Substack open rates and subscriber growth check",
+    "Any brand deal pitches to send this month?",
+  ]},
+  {cat:"👗 C DOT. Brand Review", items:[
+    "Full inventory check — what's available, what's sold?",
+    "Review sales and revenue from the month",
+    "New product or collection ideas to develop",
+    "Brand partnerships or collabs to pursue?",
+    "Website or shop page update needed?",
+  ]},
+  {cat:"🌟 Personal Brand + Press", items:[
+    "Update bio on website and key platforms",
+    "Any press features, speaking, or media to pitch?",
+    "LinkedIn or professional profile update?",
+    "Add new work, exhibitions, or achievements to portfolio",
+    "Any award nominations or recognition opportunities?",
+  ]},
+  {cat:"♡ Personal Growth + Wellbeing", items:[
+    "Journal: what did this month teach you?",
+    "Tarot or intention-setting for next month",
+    "Health check — all appointments scheduled?",
+    "Gym and movement — hitting your rhythm?",
+    "Community and relationships — who do you need to connect with?",
+    "What drained you this month? What can you release?",
+  ]},
+];
+
+function ResetTab(){
+  const [view,setView]=useState("weekly");
+  const [weeklyResets,setWR]=useState([]);
+  const [monthlyResets,setMR]=useState([]);
+  const [wAudits,setWA]=useState([]);
+  const [mAudits,setMA]=useState([]);
+  const [wForm,setWF]=useState({weekOf:todayStr(),wins:"",improve:"",gratitude:"",nextFocus:"",rating:5});
+  const [mForm,setMF]=useState({month:new Date().getMonth()+1,year:new Date().getFullYear(),bigWins:"",challenges:"",lessons:"",nextGoals:"",rating:5});
+  const [wChecks,setWC]=useState({});   // {catIdx_itemIdx: bool}
+  const [mChecks,setMC]=useState({});
+  const [wAuditNote,setWAN]=useState("");
+  const [mAuditNote,setMAN]=useState("");
+  const [inited,setInited]=useState(false);
+  const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+  useEffect(()=>{
+    setWR(store.get("resets_weekly",[]));
+    setMR(store.get("resets_monthly",[]));
+    setWA(store.get("audits_weekly",[]));
+    setMA(store.get("audits_monthly",[]));
+    setWC(store.get("audit_wchecks",{}));
+    setMC(store.get("audit_mchecks",{}));
+    setInited(true);
+  },[]);
+  useEffect(()=>{if(inited){store.set("resets_weekly",weeklyResets);}},[weeklyResets,inited]);
+  useEffect(()=>{if(inited){store.set("resets_monthly",monthlyResets);}},[monthlyResets,inited]);
+  useEffect(()=>{if(inited){store.set("audits_weekly",wAudits);}},[wAudits,inited]);
+  useEffect(()=>{if(inited){store.set("audits_monthly",mAudits);}},[mAudits,inited]);
+  useEffect(()=>{if(inited){store.set("audit_wchecks",wChecks);}},[wChecks,inited]);
+  useEffect(()=>{if(inited){store.set("audit_mchecks",mChecks);}},[mChecks,inited]);
+
+  const saveWeekly=()=>{setWR(r=>[{...wForm,id:uid(),created:todayStr()},...r]);setWF({weekOf:todayStr(),wins:"",improve:"",gratitude:"",nextFocus:"",rating:5});};
+  const saveMonthly=()=>{setMR(r=>[{...mForm,id:uid(),created:todayStr()},...r]);setMF({month:new Date().getMonth()+1,year:new Date().getFullYear(),bigWins:"",challenges:"",lessons:"",nextGoals:"",rating:5});};
+
+  const saveWeeklyAudit=()=>{
+    const total=WEEKLY_AUDIT.reduce((s,c)=>s+c.items.length,0);
+    const done=Object.values(wChecks).filter(Boolean).length;
+    setWA(a=>[{id:uid(),date:todayStr(),checks:{...wChecks},note:wAuditNote,total,done},...a]);
+    setWC({});setWAN("");
+  };
+  const saveMonthlyAudit=()=>{
+    const total=MONTHLY_AUDIT.reduce((s,c)=>s+c.items.length,0);
+    const done=Object.values(mChecks).filter(Boolean).length;
+    setMA(a=>[{id:uid(),date:todayStr(),checks:{...mChecks},note:mAuditNote,total,done},...a]);
+    setMC({});setMAN("");
+  };
+
+  const wTotal=WEEKLY_AUDIT.reduce((s,c)=>s+c.items.length,0);
+  const wDone=Object.values(wChecks).filter(Boolean).length;
+  const mTotal=MONTHLY_AUDIT.reduce((s,c)=>s+c.items.length,0);
+  const mDone=Object.values(mChecks).filter(Boolean).length;
+
+  const CAT_COLORS=[C.pink,C.lav,C.mint,C.peach,C.yellow,C.blue,C.rose,C.lilac,C.mint];
+
+  const AuditChecklist=({items:ITEMS,checks,setChecks,note,setNote,total,done,onSave,accentColor})=>(
+    <div>
+      {/* Progress bar */}
+      <div style={{background:C.white,borderRadius:12,padding:"16px 20px",marginBottom:20,border:`1.5px solid rgba(0,0,0,0.07)`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,fontSize:16,textTransform:"uppercase",letterSpacing:"0.06em",color:accentColor}}>Progress: {done}/{total} complete</div>
+          <div style={{fontSize:13,fontWeight:700,color:accentColor}}>{total>0?Math.round((done/total)*100):0}%</div>
+        </div>
+        <ProgressBar val={done} max={total} color={accentColor}/>
+        <div style={{display:"flex",gap:10,marginTop:12,flexWrap:"wrap"}}>
+          <button onClick={()=>setChecks(()=>{const all={};ITEMS.forEach((c,ci)=>c.items.forEach((_,ii)=>{all[`${ci}_${ii}`]=true;}));return all;})} style={{background:"none",border:`1.5px solid ${accentColor}`,borderRadius:16,padding:"4px 14px",fontSize:11,cursor:"pointer",color:accentColor,fontWeight:700}}>✓ Check All</button>
+          <button onClick={()=>setChecks({})} style={{background:"none",border:`1.5px solid ${C.lgray}`,borderRadius:16,padding:"4px 14px",fontSize:11,cursor:"pointer",color:C.gray,fontWeight:700}}>↺ Clear All</button>
+        </div>
+      </div>
+
+      {/* Checklist by category */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:14,marginBottom:20}}>
+        {ITEMS.map((cat,ci)=>{
+          const catDone=cat.items.filter((_,ii)=>checks[`${ci}_${ii}`]).length;
+          const col=CAT_COLORS[ci%CAT_COLORS.length];
+          return <div key={ci} style={{background:col+"44",borderRadius:12,padding:16,borderTop:`3px solid ${col}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,fontSize:14,textTransform:"uppercase",letterSpacing:"0.05em",color:C.charcoal}}>{cat.cat}</div>
+              <span style={{background:catDone===cat.items.length?C.mint:col,borderRadius:10,padding:"2px 10px",fontSize:11,fontWeight:700,color:C.charcoal}}>{catDone}/{cat.items.length}</span>
+            </div>
+            {cat.items.map((item,ii)=>{
+              const key=`${ci}_${ii}`;
+              return <label key={ii} style={{display:"flex",alignItems:"flex-start",gap:8,marginBottom:8,cursor:"pointer"}}>
+                <input type="checkbox" checked={!!checks[key]} onChange={e=>setChecks(prev=>({...prev,[key]:e.target.checked}))} style={{marginTop:3,flexShrink:0,accentColor:accentColor}}/>
+                <span style={{fontSize:13,color:checks[key]?"#aaa":C.charcoal,textDecoration:checks[key]?"line-through":"none",lineHeight:1.5}}>{item}</span>
+              </label>;
+            })}
+          </div>;
+        })}
+      </div>
+
+      {/* Save audit */}
+      <Card style={{borderTop:`3px solid ${accentColor}`}}>
+        <Lbl style={{marginBottom:8}}>Notes for this audit (optional)</Lbl>
+        <Txta value={note} onChange={setNote} placeholder="Anything to flag, decide, or follow up on from this audit…" rows={3}/>
+        <div style={{marginTop:14,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          <Btn color={accentColor} style={{color:accentColor===C.yellowMed?"#1A1A1A":"#fff"}} onClick={onSave}>Save Audit ({done}/{total} done) ↻</Btn>
+          <span style={{fontSize:12,color:C.gray,fontStyle:"italic"}}>Saves a snapshot of your completion to Audit History</span>
+        </div>
+      </Card>
+    </div>
+  );
+
+  const views=[
+    {id:"weekly-audit",label:"Weekly Audit"},
+    {id:"weekly",label:"Weekly Reset"},
+    {id:"monthly-audit",label:"Monthly Audit"},
+    {id:"monthly",label:"Monthly Reset"},
+    {id:"history",label:"History"},
+  ];
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
+      <SecTitle color={C.yellowMed}>Reset Studio ↻</SecTitle>
+      <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+        {views.map(v=><button key={v.id} onClick={()=>setView(v.id)} style={{padding:"7px 14px",borderRadius:20,border:`2px solid ${C.yellowMed}`,background:view===v.id?C.yellowMed:"transparent",color:view===v.id?"#fff":C.yellowMed,fontWeight:800,fontSize:11,letterSpacing:"0.05em",cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>{v.label}</button>)}
+      </div>
+    </div>
+
+    {view==="weekly-audit"&&<div>
+      <div style={{background:`linear-gradient(135deg,${C.yellow},${C.peach})`,borderRadius:12,padding:"20px 24px",marginBottom:24}}>
+        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:22,textTransform:"uppercase",letterSpacing:"0.05em",color:C.charcoal,marginBottom:4}}>Weekly Audit Checklist</div>
+        <div style={{fontSize:13,color:"rgba(0,0,0,0.6)",lineHeight:1.6}}>Run this every week — ideally Friday or Sunday. Get your house in order across every area of your life and business before the next week begins.</div>
+      </div>
+      <AuditChecklist items={WEEKLY_AUDIT} checks={wChecks} setChecks={setWC} note={wAuditNote} setNote={setWAN} total={wTotal} done={wDone} onSave={saveWeeklyAudit} accentColor={C.yellowMed}/>
+    </div>}
+
+    {view==="weekly"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+      <Card>
+        <SecTitle color={C.yellowMed} style={{marginBottom:16}}>Weekly Reset</SecTitle>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div><Lbl>Week of</Lbl><Inp type="date" value={wForm.weekOf} onChange={v=>setWF({...wForm,weekOf:v})}/></div>
+          <div><Lbl>✦ Top Wins This Week</Lbl><Txta value={wForm.wins} onChange={v=>setWF({...wForm,wins:v})} placeholder="What went right? What did you accomplish?" rows={3}/></div>
+          <div><Lbl>↑ What to Improve</Lbl><Txta value={wForm.improve} onChange={v=>setWF({...wForm,improve:v})} placeholder="What would you do differently?" rows={3}/></div>
+          <div><Lbl>♡ Gratitude</Lbl><Txta value={wForm.gratitude} onChange={v=>setWF({...wForm,gratitude:v})} placeholder="What are you grateful for this week?" rows={2}/></div>
+          <div><Lbl>→ Next Week's Focus</Lbl><Txta value={wForm.nextFocus} onChange={v=>setWF({...wForm,nextFocus:v})} placeholder="What are you committing to next week?" rows={2}/></div>
+          <div><Lbl>Rating (1–10): <strong style={{color:C.yellowMed}}>{wForm.rating}</strong></Lbl><input type="range" min={1} max={10} value={wForm.rating} onChange={e=>setWF({...wForm,rating:Number(e.target.value)})}/></div>
+          <Btn color={C.yellowMed} style={{color:C.charcoal}} onClick={saveWeekly}>Save Weekly Reset ↻</Btn>
+        </div>
+      </Card>
+      <div>
+        <SecTitle color={C.yellowMed} style={{fontSize:17,marginBottom:14}}>Recent Resets</SecTitle>
+        {weeklyResets.length===0&&<div style={{fontSize:13,color:C.gray,fontStyle:"italic"}}>No weekly resets saved yet.</div>}
+        {weeklyResets.slice(0,5).map(r=><Card key={r.id} style={{marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+            <div style={{fontWeight:700,fontSize:14}}>Week of {fmtDate(r.weekOf)}</div>
+            <div style={{background:C.yellow,borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:700,color:C.charcoal}}>{r.rating}/10</div>
+          </div>
+          {r.wins&&<div style={{fontSize:12,color:C.gray,lineHeight:1.5,marginBottom:4}}><strong>Wins:</strong> {r.wins.slice(0,120)}{r.wins.length>120?"…":""}</div>}
+          {r.nextFocus&&<div style={{fontSize:12,color:C.gray,lineHeight:1.5}}><strong>Next week:</strong> {r.nextFocus.slice(0,100)}{r.nextFocus.length>100?"…":""}</div>}
+        </Card>)}
+      </div>
+    </div>}
+
+    {view==="monthly-audit"&&<div>
+      <div style={{background:`linear-gradient(135deg,${C.lav},${C.pink})`,borderRadius:12,padding:"20px 24px",marginBottom:24}}>
+        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:22,textTransform:"uppercase",letterSpacing:"0.05em",color:C.charcoal,marginBottom:4}}>Monthly Audit Checklist</div>
+        <div style={{fontSize:13,color:"rgba(0,0,0,0.6)",lineHeight:1.6}}>Run this at the end of every month. This is your full business and life audit — admin, finance, brand, social, gallery, C DOT, and personal growth all in one place.</div>
+      </div>
+      <AuditChecklist items={MONTHLY_AUDIT} checks={mChecks} setChecks={setMC} note={mAuditNote} setNote={setMAN} total={mTotal} done={mDone} onSave={saveMonthlyAudit} accentColor={C.lavDeep}/>
+    </div>}
+
+    {view==="monthly"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+      <Card>
+        <SecTitle color={C.yellowMed} style={{marginBottom:16}}>Monthly Reset</SecTitle>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div><Lbl>Month</Lbl><Sel value={mForm.month} onChange={v=>setMF({...mForm,month:Number(v)})} options={MONTHS.map((m,i)=>({v:i+1,l:m}))}/></div>
+            <div><Lbl>Year</Lbl><Inp type="number" value={mForm.year} onChange={v=>setMF({...mForm,year:Number(v)})}/></div>
+          </div>
+          <div><Lbl>✦ Big Wins This Month</Lbl><Txta value={mForm.bigWins} onChange={v=>setMF({...mForm,bigWins:v})} placeholder="Major accomplishments, milestones…" rows={3}/></div>
+          <div><Lbl>↗ Challenges Faced</Lbl><Txta value={mForm.challenges} onChange={v=>setMF({...mForm,challenges:v})} placeholder="What was hard? What tested you?" rows={3}/></div>
+          <div><Lbl>✎ Lessons Learned</Lbl><Txta value={mForm.lessons} onChange={v=>setMF({...mForm,lessons:v})} placeholder="What did this month teach you?" rows={2}/></div>
+          <div><Lbl>→ Next Month's Goals</Lbl><Txta value={mForm.nextGoals} onChange={v=>setMF({...mForm,nextGoals:v})} placeholder="What are you committing to?" rows={2}/></div>
+          <div><Lbl>Month Rating (1–10): <strong style={{color:C.yellowMed}}>{mForm.rating}</strong></Lbl><input type="range" min={1} max={10} value={mForm.rating} onChange={e=>setMF({...mForm,rating:Number(e.target.value)})}/></div>
+          <Btn color={C.yellowMed} style={{color:C.charcoal}} onClick={saveMonthly}>Save Monthly Reset ↻</Btn>
+        </div>
+      </Card>
+      <Card>
+        <SecTitle color={C.yellowMed} style={{fontSize:17,marginBottom:14}}>Monthly History</SecTitle>
+        {monthlyResets.length===0&&<div style={{fontSize:13,color:C.gray,fontStyle:"italic"}}>No monthly resets yet.</div>}
+        {monthlyResets.slice(0,5).map(r=><div key={r.id} style={{borderBottom:`1px solid ${C.lgray}`,paddingBottom:12,marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+            <div style={{fontWeight:700,fontSize:14}}>{MONTHS[r.month-1]} {r.year}</div>
+            <div style={{background:C.yellow,borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:700,color:C.charcoal}}>{r.rating}/10</div>
+          </div>
+          {r.bigWins&&<div style={{fontSize:12,color:C.gray,lineHeight:1.5}}><strong>Wins:</strong> {r.bigWins.slice(0,120)}{r.bigWins.length>120?"…":""}</div>}
+        </div>)}
+      </Card>
+    </div>}
+
+    {view==="history"&&<div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24}}>
+        {/* Weekly audit history */}
+        <div>
+          <SecTitle color={C.yellowMed} style={{fontSize:18,marginBottom:14}}>Weekly Audits ({wAudits.length})</SecTitle>
+          {wAudits.length===0&&<div style={{fontSize:13,color:C.gray,fontStyle:"italic",padding:16}}>No weekly audits saved yet.</div>}
+          {wAudits.slice(0,8).map(a=><Card key={a.id} style={{marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <div style={{fontWeight:700,fontSize:14}}>{fmtDate(a.date)}</div>
+              <div style={{background:a.done===a.total?C.mint:C.yellow,borderRadius:10,padding:"3px 12px",fontSize:12,fontWeight:700,color:C.charcoal}}>{a.done}/{a.total} ✓</div>
+            </div>
+            <ProgressBar val={a.done} max={a.total} color={C.yellowMed}/>
+            {a.note&&<div style={{fontSize:12,color:C.gray,marginTop:8,lineHeight:1.5}}>{a.note}</div>}
+          </Card>)}
+        </div>
+
+        {/* Monthly audit history */}
+        <div>
+          <SecTitle color={C.lavDeep} style={{fontSize:18,marginBottom:14}}>Monthly Audits ({mAudits.length})</SecTitle>
+          {mAudits.length===0&&<div style={{fontSize:13,color:C.gray,fontStyle:"italic",padding:16}}>No monthly audits saved yet.</div>}
+          {mAudits.slice(0,8).map(a=><Card key={a.id} style={{marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <div style={{fontWeight:700,fontSize:14}}>{fmtDate(a.date)}</div>
+              <div style={{background:a.done===a.total?C.mint:C.lav,borderRadius:10,padding:"3px 12px",fontSize:12,fontWeight:700,color:C.charcoal}}>{a.done}/{a.total} ✓</div>
+            </div>
+            <ProgressBar val={a.done} max={a.total} color={C.lavDeep}/>
+            {a.note&&<div style={{fontSize:12,color:C.gray,marginTop:8,lineHeight:1.5}}>{a.note}</div>}
+          </Card>)}
+        </div>
+
+        {/* Weekly reset history */}
+        <div>
+          <SecTitle color={C.yellowMed} style={{fontSize:18,marginBottom:14}}>Weekly Resets ({weeklyResets.length})</SecTitle>
+          {weeklyResets.length===0&&<div style={{fontSize:13,color:C.gray,fontStyle:"italic"}}>No weekly resets yet.</div>}
+          {weeklyResets.map(r=><Card key={r.id} style={{marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+              <div style={{fontWeight:700}}>Week of {fmtDate(r.weekOf)}</div>
+              <div style={{background:C.yellow,borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:700,color:C.charcoal}}>{r.rating}/10</div>
+            </div>
+            {r.wins&&<div style={{fontSize:13,color:C.gray,lineHeight:1.5,marginBottom:4}}><strong>Wins:</strong> {r.wins}</div>}
+            {r.improve&&<div style={{fontSize:13,color:C.gray,lineHeight:1.5}}><strong>Improve:</strong> {r.improve}</div>}
+          </Card>)}
+        </div>
+
+        {/* Monthly reset history */}
+        <div>
+          <SecTitle color={C.yellowMed} style={{fontSize:18,marginBottom:14}}>Monthly Resets ({monthlyResets.length})</SecTitle>
+          {monthlyResets.length===0&&<div style={{fontSize:13,color:C.gray,fontStyle:"italic"}}>No monthly resets yet.</div>}
+          {monthlyResets.map(r=><Card key={r.id} style={{marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+              <div style={{fontWeight:700}}>{"Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ")[r.month-1]} {r.year}</div>
+              <div style={{background:C.yellow,borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:700,color:C.charcoal}}>{r.rating}/10</div>
+            </div>
+            {r.bigWins&&<div style={{fontSize:13,color:C.gray,lineHeight:1.5}}><strong>Wins:</strong> {r.bigWins}</div>}
+          </Card>)}
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
+// ── BIZ OPS ───────────────────────────────────────────
+const BIZ_SECTIONS=[
+  {key:"brand",label:"Brand Identity",emoji:"🎨",items:[{k:"Brand Name",v:""},{k:"CMA Pink",v:"#EAA8C2"},{k:"CMA Lavender",v:"#C3C0DB"},{k:"Charcoal",v:"#1A1A1A"},{k:"Lightning",v:"#FFE53B"},{k:"Primary Font",v:"Barlow Condensed"},{k:"Website",v:"chelamitchellart.com"}]},
+  {key:"business",label:"Business Info",emoji:"📋",items:[{k:"Business Name",v:"Chela Mitchell Art Gallery"},{k:"EIN",v:""},{k:"Business Type",v:""},{k:"Year Founded",v:"2021"},{k:"DC Ward",v:"Ward 5"},{k:"NADA Member",v:"Yes"}]},
+  {key:"banking",label:"Banking + Finance",emoji:"🏦",items:[{k:"Bank Name",v:""},{k:"Checking (last 4)",v:""},{k:"Savings (last 4)",v:""},{k:"Routing #",v:""},{k:"PayPal",v:""},{k:"Venmo/CashApp",v:""}]},
+  {key:"social",label:"Social Media",emoji:"📱",items:[{k:"Instagram",v:"@chelamitchellart"},{k:"TikTok",v:"@chelamitchellart"},{k:"Facebook",v:""},{k:"Substack",v:""},{k:"YouTube",v:""},{k:"LinkedIn",v:""}]},
+  {key:"contacts",label:"Key Contacts",emoji:"📇",items:[{k:"Perkins Eastman",v:"Christy Schlesinger"},{k:"EDENS",v:"Emalia Tamanikwa"},{k:"OAG Paralegal",v:"Alex Galarza"},{k:"Accountant",v:""},{k:"Lawyer",v:""},{k:"Insurance",v:""}]},
+  {key:"tools",label:"Tools + Subscriptions",emoji:"🔧",items:[{k:"Website Host",v:""},{k:"Email",v:""},{k:"Canva",v:""},{k:"Accounting",v:""},{k:"Monthly Tool Budget",v:""}]},
+];
+
+function BizOpsTab(){
+  const [data,setData]=useState({});
+  const [inited,setInited]=useState(false);
+  const [show,setShow]=useState({});
+  const [adding,setAdding]=useState(null);
+  const [newItem,setNewItem]=useState({k:"",v:""});
+
+  useEffect(()=>{setData(store.get("bizops_data",{}));setInited(true);},[]);
+  useEffect(()=>{if(inited){store.set("bizops_data",data);}},[data,inited]);
+
+  const getItems=key=>data[key]||BIZ_SECTIONS.find(s=>s.key===key)?.items||[];
+  const updateItem=(sKey,idx,field,val)=>{const items=[...getItems(sKey)];items[idx]={...items[idx],[field]:val};setData(d=>({...d,[sKey]:items}));};
+  const addItem=sKey=>{if(!newItem.k.trim())return;const items=[...getItems(sKey),{k:newItem.k,v:newItem.v}];setData(d=>({...d,[sKey]:items}));setNewItem({k:"",v:""});setAdding(null);};
+  const delItem=(sKey,idx)=>{const items=getItems(sKey).filter((_,i)=>i!==idx);setData(d=>({...d,[sKey]:items}));};
+  const isSensitive=(sKey,k)=>sKey==="banking"||["EIN","Routing","Account","Password"].some(s=>k.includes(s));
+
+  return <div>
+    <SecTitle color={C.blueMed} style={{marginBottom:20}}>Biz Ops ⌘</SecTitle>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:16}}>
+      {BIZ_SECTIONS.map(sec=>{
+        const items=getItems(sec.key);
+        const isShowing=show[sec.key];
+        return <Card key={sec.key}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,fontSize:17,textTransform:"uppercase",letterSpacing:"0.06em",color:C.blueMed}}>{sec.emoji} {sec.label}</div>
+            {isSensitive(sec.key,"")&&<button onClick={()=>setShow(s=>({...s,[sec.key]:!s[sec.key]}))} style={{background:C.blue,border:"none",borderRadius:10,padding:"3px 10px",fontSize:11,cursor:"pointer",color:C.blueDeep,fontWeight:700}}>{isShowing?"🙈 Hide":"👁 Show"}</button>}
+          </div>
+          {items.map((item,idx)=><div key={idx} style={{display:"grid",gridTemplateColumns:"120px 1fr 28px",gap:8,marginBottom:8,alignItems:"center"}}>
+            <Lbl style={{marginBottom:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.k}</Lbl>
+            <input type={(isSensitive(sec.key,item.k)&&!isShowing)?"password":"text"} value={item.v} onChange={e=>updateItem(sec.key,idx,"v",e.target.value)} placeholder="—" style={{border:"1.5px solid rgba(0,0,0,0.08)",borderRadius:6,padding:"5px 8px",fontSize:13,outline:"none",width:"100%",boxSizing:"border-box",fontFamily:"inherit"}}/>
+            <button onClick={()=>delItem(sec.key,idx)} style={{background:"none",border:"none",cursor:"pointer",color:"#ddd",fontSize:14}}>×</button>
+          </div>)}
+          {adding===sec.key?<div style={{display:"flex",gap:6,marginTop:10}}><Inp value={newItem.k} onChange={v=>setNewItem({...newItem,k:v})} placeholder="Field" style={{flex:"0 0 110px"}}/><Inp value={newItem.v} onChange={v=>setNewItem({...newItem,v:v})} placeholder="Value"/><Btn sm color={C.blueMed} onClick={()=>addItem(sec.key)}>Add</Btn><Btn sm outline color={C.gray} onClick={()=>setAdding(null)}>✕</Btn></div>
+          :<button onClick={()=>setAdding(sec.key)} style={{background:"none",border:`1.5px dashed ${C.blueMed}`,borderRadius:8,padding:"5px 12px",fontSize:12,cursor:"pointer",color:C.blueMed,marginTop:8,fontWeight:700}}>+ Add Field</button>}
+        </Card>;
+      })}
+    </div>
+  </div>;
+}
+
+// ── MOODBOARD ─────────────────────────────────────────
+const WISH_CATS=["Gallery","Closet","Home"];
+const WISH_COLORS={Gallery:C.lav,Closet:C.pink,Home:C.mint};
+const WISH_DARK={Gallery:C.lavMed,Closet:C.pinkMed,Home:C.mintMed};
+
+function MoodboardTab(){
+  const [wishlist,setWishlist]=useState([]);
+  const [activeCat,setActiveCat]=useState("Gallery");
+  const [modal,setModal]=useState(false);
+  const [form,setForm]=useState({name:"",url:"",price:"",notes:"",cat:"Gallery",priority:"Want"});
+  const [editId,setEditId]=useState(null);
+  const [inited,setInited]=useState(false);
+
+  useEffect(()=>{setWishlist(store.get("wishlist",[]));setInited(true);},[]);
+  useEffect(()=>{if(inited){store.set("wishlist",wishlist);}},[wishlist,inited]);
+
+  const catItems=wishlist.filter(w=>w.cat===activeCat);
+  const openNew=()=>{setForm({name:"",url:"",price:"",notes:"",cat:activeCat,priority:"Want"});setEditId(null);setModal(true);};
+  const openEdit=w=>{setForm({...w});setEditId(w.id);setModal(true);};
+  const save=()=>{if(!form.name.trim())return;if(editId)setWishlist(wl=>wl.map(w=>w.id===editId?{...w,...form}:w));else setWishlist(wl=>[...wl,{...form,id:uid(),added:todayStr()}]);setModal(false);};
+  const del=id=>setWishlist(wl=>wl.filter(w=>w.id!==id));
+  const toggle=id=>setWishlist(wl=>wl.map(w=>w.id===id?{...w,purchased:!w.purchased}:w));
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
+      <SecTitle color={C.roseMed}>Moodboard + Wishlist ✿</SecTitle>
+      <Btn color={WISH_DARK[activeCat]||C.roseMed} onClick={openNew}>+ Add to {activeCat}</Btn>
+    </div>
+    <div style={{display:"flex",gap:8,marginBottom:20}}>
+      {WISH_CATS.map(c=>{const n=wishlist.filter(w=>w.cat===c&&!w.purchased).length;return<button key={c} onClick={()=>setActiveCat(c)} style={{padding:"9px 20px",borderRadius:20,border:`2px solid ${WISH_DARK[c]}`,background:activeCat===c?WISH_DARK[c]:WISH_COLORS[c]+"88",color:activeCat===c?"#fff":C.charcoal,fontWeight:800,fontSize:13,letterSpacing:"0.06em",cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>{c} ({n})</button>;})}
+    </div>
+    {catItems.length===0&&<div style={{textAlign:"center",padding:60,color:C.gray,fontSize:14,fontStyle:"italic"}}>Your {activeCat} wishlist is empty. Start adding things you love. ✿</div>}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:14}}>
+      {catItems.filter(w=>!w.purchased).map(w=><div key={w.id} style={{background:WISH_COLORS[w.cat]+"55",borderRadius:12,padding:16,border:`1.5px solid ${WISH_DARK[w.cat]}33`,position:"relative"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+          <div style={{fontWeight:700,fontSize:15,color:C.charcoal,lineHeight:1.3,flex:1,paddingRight:8,cursor:"pointer"}} onClick={()=>openEdit(w)}>{w.name}</div>
+          <button onClick={()=>del(w.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#ccc",fontSize:16,lineHeight:1}}>×</button>
+        </div>
+        {w.price&&<div style={{fontSize:14,fontWeight:700,color:WISH_DARK[w.cat],marginBottom:8}}>{w.price.startsWith("$")?w.price:`$${w.price}`}</div>}
+        {w.notes&&<div style={{fontSize:12,color:"#666",lineHeight:1.5,marginBottom:10}}>{w.notes}</div>}
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {w.url&&<a href={w.url} target="_blank" rel="noopener noreferrer" style={{background:WISH_DARK[w.cat],color:"#fff",borderRadius:16,padding:"5px 14px",fontSize:11,fontWeight:800,textDecoration:"none",letterSpacing:"0.06em",textTransform:"uppercase",fontFamily:"'Barlow Condensed',sans-serif"}}>Shop →</a>}
+          <button onClick={()=>toggle(w.id)} style={{background:"transparent",border:`1.5px solid ${WISH_DARK[w.cat]}`,borderRadius:16,padding:"4px 12px",fontSize:11,cursor:"pointer",color:WISH_DARK[w.cat],fontWeight:700}}>✓ Got It</button>
+        </div>
+      </div>)}
+    </div>
+    {catItems.filter(w=>w.purchased).length>0&&<div style={{marginTop:24}}>
+      <div style={{fontSize:12,fontWeight:700,color:C.gray,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:10}}>✓ Purchased</div>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>{catItems.filter(w=>w.purchased).map(w=><div key={w.id} style={{background:C.lgray,borderRadius:10,padding:"7px 14px",display:"flex",alignItems:"center",gap:10,opacity:0.7}}><span style={{fontSize:13,textDecoration:"line-through",color:C.gray}}>{w.name}</span><button onClick={()=>toggle(w.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.gray,fontSize:11}}>↩</button><button onClick={()=>del(w.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#ccc",fontSize:13}}>×</button></div>)}</div>
+    </div>}
+    <Modal open={modal} onClose={()=>setModal(false)} title={editId?"Edit Item":"Add to Wishlist"} color={WISH_DARK[form.cat]||C.roseMed}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div><Lbl>Item Name</Lbl><Inp value={form.name} onChange={v=>setForm({...form,name:v})} placeholder="What do you want?"/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}><div><Lbl>Category</Lbl><Sel value={form.cat} onChange={v=>setForm({...form,cat:v})} options={WISH_CATS}/></div><div><Lbl>Priority</Lbl><Sel value={form.priority} onChange={v=>setForm({...form,priority:v})} options={["Need","Want","Dream","Someday"]}/></div></div>
+        <div><Lbl>Price</Lbl><Inp value={form.price} onChange={v=>setForm({...form,price:v})} placeholder="e.g. $120"/></div>
+        <div><Lbl>Link / URL</Lbl><Inp value={form.url} onChange={v=>setForm({...form,url:v})} placeholder="https://…"/></div>
+        <div><Lbl>Notes</Lbl><Txta value={form.notes} onChange={v=>setForm({...form,notes:v})} rows={2} placeholder="Why you want it, size, color, notes…"/></div>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><Btn outline color={C.gray} sm onClick={()=>setModal(false)}>Cancel</Btn><Btn color={WISH_DARK[form.cat]||C.roseMed} onClick={save}>{editId?"Save":"Add"}</Btn></div>
+      </div>
+    </Modal>
+  </div>;
+}
+
+// ── PERSONAL TAB ──────────────────────────────────────
+function PersonalTab(){
+  const [section,setSection]=useState("journal");
+  const [journal,setJournal]=useState([]);
+  const [tarot,setTarot]=useState([]);
+  const [appts,setAppts]=useState([]);
+  const [gym,setGym]=useState([]);
+  const [affList,setAffList]=useState(DEFAULT_AFFIRMATIONS);
+  const [inited,setInited]=useState(false);
+  const [jForm,setJF]=useState({date:todayStr(),mood:"✨",content:""});
+  const [tForm,setTF]=useState({date:todayStr(),card:"",spread:"",meaning:"",notes:""});
+  const [aForm,setAF]=useState({type:"Doctor",provider:"",date:"",notes:""});
+  const [gForm,setGF]=useState({date:todayStr(),activity:"",duration:"",notes:""});
+  const [newAff,setNewAff]=useState("");
+  const MOODS=["✨","🌸","💜","🔥","😮‍💨","💤","🌧️","💪"];
+
+  useEffect(()=>{setJournal(store.get("personal_journal",[]));setTarot(store.get("personal_tarot",[]));setAppts(store.get("personal_appts",[]));setGym(store.get("personal_gym",[]));setAffList(store.get("personal_affs",DEFAULT_AFFIRMATIONS));setInited(true);},[]);
+  useEffect(()=>{if(inited){store.set("personal_journal",journal);}},[journal,inited]);
+  useEffect(()=>{if(inited){store.set("personal_tarot",tarot);}},[tarot,inited]);
+  useEffect(()=>{if(inited){store.set("personal_appts",appts);}},[appts,inited]);
+  useEffect(()=>{if(inited){store.set("personal_gym",gym);}},[gym,inited]);
+  useEffect(()=>{if(inited){store.set("personal_affs",affList);}},[affList,inited]);
+
+  const saveJournal=()=>{if(!jForm.content.trim())return;setJournal(j=>[{...jForm,id:uid()},...j]);setJF({date:todayStr(),mood:"✨",content:""});};
+  const saveTarot=()=>{if(!tForm.card.trim())return;setTarot(t=>[{...tForm,id:uid()},...t]);setTF({date:todayStr(),card:"",spread:"",meaning:"",notes:""});};
+  const saveAppt=()=>{if(!aForm.provider.trim())return;setAppts(a=>[...a,{...aForm,id:uid()}]);setAF({type:"Doctor",provider:"",date:"",notes:""});};
+  const saveGym=()=>{if(!gForm.activity.trim())return;setGym(g=>[{...gForm,id:uid()},...g]);setGF({date:todayStr(),activity:"",duration:"",notes:""});};
+
+  const todayAff=getDayAff(affList);
+  const affMsg=`✦ Good morning, Chela. ✦\n\n${todayAff}\n\nYou are CMA. You are the vision.\n— Your daily reminder 🌸`;
+  const gymWeekTotal=gym.filter(g=>{const d=new Date(g.date+"T12:00:00");const w=new Date();w.setDate(w.getDate()-w.getDay());return d>=w;}).length;
+
+  const secs=[{id:"journal",label:"Journal"},{id:"tarot",label:"Tarot"},{id:"appts",label:"Health Appts"},{id:"gym",label:"Gym"},{id:"affirmations",label:"Affirmations"}];
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
+      <SecTitle color={C.lilacMed}>Personal ♡</SecTitle>
+      <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{secs.map(s=><button key={s.id} onClick={()=>setSection(s.id)} style={{padding:"6px 14px",borderRadius:20,border:`2px solid ${C.lilacMed}`,background:section===s.id?C.lilacMed:"transparent",color:section===s.id?"#fff":C.lilacMed,fontWeight:800,fontSize:11,letterSpacing:"0.06em",cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>{s.label}</button>)}</div>
+    </div>
+
+    {section==="journal"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+      <Card color={C.lilac}>
+        <SecTitle color={C.lilacMed} style={{marginBottom:14}}>New Entry</SecTitle>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:10}}>
+            <div><Lbl>Date</Lbl><Inp type="date" value={jForm.date} onChange={v=>setJF({...jForm,date:v})}/></div>
+            <div><Lbl>Mood</Lbl><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{MOODS.map(m=><button key={m} onClick={()=>setJF({...jForm,mood:m})} style={{background:jForm.mood===m?C.lilacMed:"transparent",border:`1.5px solid ${jForm.mood===m?C.lilacMed:C.lgray}`,borderRadius:8,padding:"4px 6px",fontSize:16,cursor:"pointer"}}>{m}</button>)}</div></div>
+          </div>
+          <div><Lbl>Entry</Lbl><Txta value={jForm.content} onChange={v=>setJF({...jForm,content:v})} placeholder="What's on your mind?" rows={6}/></div>
+          <Btn color={C.lilacMed} onClick={saveJournal}>Save Entry ♡</Btn>
+        </div>
+      </Card>
+      <div>
+        <SecTitle color={C.lilacMed} style={{fontSize:17,marginBottom:14}}>Past Entries</SecTitle>
+        {journal.length===0&&<div style={{color:C.gray,fontStyle:"italic",fontSize:13}}>Start your first journal entry.</div>}
+        {journal.slice(0,5).map(e=><Card key={e.id} style={{marginBottom:12,borderLeft:`4px solid ${C.lilacMed}`}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><div style={{fontSize:12,fontWeight:700,color:C.gray}}>{fmtDate(e.date)}</div><div style={{fontSize:18}}>{e.mood}</div></div><div style={{fontSize:13,color:C.charcoal,lineHeight:1.6}}>{e.content.slice(0,200)}{e.content.length>200?"…":""}</div></Card>)}
+      </div>
+    </div>}
+
+    {section==="tarot"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+      <Card color={C.lilac}>
+        <SecTitle color={C.lilacMed} style={{marginBottom:14}}>New Reading 🔮</SecTitle>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div><Lbl>Date</Lbl><Inp type="date" value={tForm.date} onChange={v=>setTF({...tForm,date:v})}/></div>
+          <div><Lbl>Card(s) Pulled</Lbl><Inp value={tForm.card} onChange={v=>setTF({...tForm,card:v})} placeholder="e.g. The High Priestess…"/></div>
+          <div><Lbl>Spread Type</Lbl><Sel value={tForm.spread} onChange={v=>setTF({...tForm,spread:v})} options={["Single Card","Three Card","Celtic Cross","Yes/No","Custom"]}/></div>
+          <div><Lbl>Meaning / Interpretation</Lbl><Txta value={tForm.meaning} onChange={v=>setTF({...tForm,meaning:v})} placeholder="What did this card mean?" rows={3}/></div>
+          <div><Lbl>Notes + Reflection</Lbl><Txta value={tForm.notes} onChange={v=>setTF({...tForm,notes:v})} placeholder="What actions are you taking?" rows={2}/></div>
+          <Btn color={C.lilacMed} onClick={saveTarot}>Log Reading 🔮</Btn>
+        </div>
+      </Card>
+      <div>
+        <SecTitle color={C.lilacMed} style={{fontSize:17,marginBottom:14}}>Reading History</SecTitle>
+        {tarot.length===0&&<div style={{color:C.gray,fontStyle:"italic",fontSize:13}}>Log your first reading.</div>}
+        {tarot.slice(0,6).map(r=><Card key={r.id} style={{marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><div style={{fontWeight:700,fontSize:15,color:C.lilacMed}}>{r.card}</div><div style={{fontSize:11,color:C.gray}}>{fmtDate(r.date)}</div></div><div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>{r.spread}</div>{r.meaning&&<div style={{fontSize:13,color:C.charcoal,lineHeight:1.5}}>{r.meaning.slice(0,150)}{r.meaning.length>150?"…":""}</div>}</Card>)}
+      </div>
+    </div>}
+
+    {section==="appts"&&<div>
+      <Card color={C.lilac} style={{marginBottom:20}}>
+        <SecTitle color={C.lilacMed} style={{marginBottom:14}}>Add Health Reminder</SecTitle>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr auto",gap:10,alignItems:"flex-end"}}>
+          <div><Lbl>Type</Lbl><Sel value={aForm.type} onChange={v=>setAF({...aForm,type:v})} options={["Doctor","Dentist","Dermatologist","Therapist","OB-GYN","Eye Doctor","Specialist","Other"]}/></div>
+          <div><Lbl>Provider</Lbl><Inp value={aForm.provider} onChange={v=>setAF({...aForm,provider:v})} placeholder="Dr. Smith…"/></div>
+          <div><Lbl>Date</Lbl><Inp type="date" value={aForm.date} onChange={v=>setAF({...aForm,date:v})}/></div>
+          <div><Lbl>Notes</Lbl><Inp value={aForm.notes} onChange={v=>setAF({...aForm,notes:v})} placeholder="Location, notes…"/></div>
+          <Btn color={C.lilacMed} onClick={saveAppt}>Add</Btn>
+        </div>
+      </Card>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:12}}>
+        {appts.length===0&&<div style={{color:C.gray,fontStyle:"italic",fontSize:13,gridColumn:"1/-1",padding:20,textAlign:"center"}}>No appointments tracked yet. Your health is your wealth.</div>}
+        {appts.sort((a,b)=>(a.date||"").localeCompare(b.date||"")).map(a=>{const isPast=a.date&&a.date<todayStr();return<div key={a.id} style={{background:isPast?C.lgray:C.lilac,borderRadius:12,padding:16,opacity:isPast?0.6:1}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><div style={{fontWeight:700,fontSize:15}}>{a.type}</div><button onClick={()=>setAppts(x=>x.filter(y=>y.id!==a.id))} style={{background:"none",border:"none",cursor:"pointer",color:"#ccc",fontSize:14}}>×</button></div><div style={{fontSize:13,color:C.charcoal,marginBottom:4}}>{a.provider}</div><div style={{fontSize:12,color:C.lilacMed,fontWeight:700}}>{fmtDate(a.date)}</div>{a.notes&&<div style={{fontSize:12,color:C.gray,marginTop:6}}>{a.notes}</div>}</div>;})}
+      </div>
+    </div>}
+
+    {section==="gym"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+      <Card color={C.lilac}>
+        <SecTitle color={C.lilacMed} style={{marginBottom:14}}>Log Workout 💪</SecTitle>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div><Lbl>Date</Lbl><Inp type="date" value={gForm.date} onChange={v=>setGF({...gForm,date:v})}/></div>
+          <div><Lbl>Activity</Lbl><Sel value={gForm.activity} onChange={v=>setGF({...gForm,activity:v})} options={["Gym / Weights","Cardio","Pilates","Yoga","Walk","Run","Dance","Home Workout","Other"]}/></div>
+          <div><Lbl>Duration</Lbl><Inp value={gForm.duration} onChange={v=>setGF({...gForm,duration:v})} placeholder="e.g. 45 min"/></div>
+          <div><Lbl>Notes</Lbl><Txta value={gForm.notes} onChange={v=>setGF({...gForm,notes:v})} rows={2} placeholder="How did you feel?"/></div>
+          <Btn color={C.lilacMed} onClick={saveGym}>Log It 💪</Btn>
+        </div>
+      </Card>
+      <div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+          <Card style={{textAlign:"center"}}><Lbl style={{marginBottom:6}}>This Week</Lbl><div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:36,color:C.lilacMed}}>{gymWeekTotal}</div><div style={{fontSize:12,color:C.gray}}>sessions</div></Card>
+          <Card style={{textAlign:"center"}}><Lbl style={{marginBottom:6}}>All Time</Lbl><div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:36,color:C.lilacMed}}>{gym.length}</div><div style={{fontSize:12,color:C.gray}}>logged</div></Card>
+        </div>
+        <SecTitle color={C.lilacMed} style={{fontSize:16,marginBottom:10}}>Recent Sessions</SecTitle>
+        {gym.slice(0,5).map(g=><div key={g.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:`1px solid ${C.lgray}`}}><div><div style={{fontSize:14,fontWeight:700,color:C.charcoal}}>{g.activity}</div>{g.notes&&<div style={{fontSize:12,color:C.gray}}>{g.notes}</div>}</div><div style={{textAlign:"right"}}><div style={{fontSize:12,color:C.gray}}>{fmtDate(g.date)}</div>{g.duration&&<div style={{fontSize:12,color:C.lilacMed,fontWeight:700}}>{g.duration}</div>}</div></div>)}
+      </div>
+    </div>}
+
+    {section==="affirmations"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+      <div>
+        <Card color={C.charcoal} style={{marginBottom:16}}>
+          <div style={{fontSize:10,letterSpacing:"0.2em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",marginBottom:12}}>Today's Affirmation · Day {new Date().getDay()+1}</div>
+          <div style={{fontFamily:"Georgia,serif",fontSize:18,fontStyle:"italic",color:C.pink,lineHeight:1.7,marginBottom:16}}>"{todayAff}"</div>
+          <Btn color={C.pinkMed} onClick={()=>openSMS(affMsg)}>📱 Send to Myself</Btn>
+        </Card>
+        <Card>
+          <SecTitle color={C.lilacMed} style={{marginBottom:14}}>Add Affirmation</SecTitle>
+          <div style={{display:"flex",gap:8}}><Txta value={newAff} onChange={setNewAff} placeholder="Write your affirmation…" rows={2} style={{flex:1}}/><Btn color={C.lilacMed} style={{alignSelf:"flex-end"}} onClick={()=>{if(!newAff.trim())return;setAffList(a=>[...a,newAff.trim()]);setNewAff("");}}>+</Btn></div>
+        </Card>
+      </div>
+      <div>
+        <SecTitle color={C.lilacMed} style={{marginBottom:14}}>Your Affirmations ({affList.length})</SecTitle>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {affList.map((a,i)=><div key={i} style={{background:i%2===0?C.lilac+"66":C.pink+"33",borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:11,fontWeight:800,color:C.lilacMed,minWidth:20}}>{i+1}</span>
+            <span style={{flex:1,fontSize:13,color:C.charcoal,fontStyle:"italic",lineHeight:1.5}}>{a}</span>
+            <button onClick={()=>setAffList(al=>al.filter((_,j)=>j!==i))} style={{background:"none",border:"none",cursor:"pointer",color:"#ccc",fontSize:14,flexShrink:0}}>×</button>
+          </div>)}
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
+// ── MAIN APP ──────────────────────────────────────────
+function App(){
+  const [activeTab,setActiveTab]=useState("hq");
+  const [tasks,setTasks]=useState([]);
+  const [projects,setProjects]=useState([]);
+  const [inited,setInited]=useState(false);
+
+  useEffect(()=>{
+    setTasks(store.get("tasks",[]));
+    setProjects(store.get("projects",[]));
+    setInited(true);
+  },[]);
+  useEffect(()=>{if(inited){store.set("tasks",tasks);}},[tasks,inited]);
+  useEffect(()=>{if(inited){store.set("projects",projects);}},[projects,inited]);
+
+  const activeTabObj=TABS.find(t=>t.id===activeTab)||TABS[0];
+
+  const renderTab=()=>{
+    switch(activeTab){
+      case"hq":return<HQTab tasks={tasks} projects={projects} goToTab={setActiveTab}/>;
+      case"tasks":return<TasksTab tasks={tasks} setTasks={setTasks} projects={projects} goToTab={setActiveTab}/>;
+      case"projects":return<ProjectsTab projects={projects} setProjects={setProjects}/>;
+      case"money":return<MoneyTab/>;
+      case"reset":return<ResetTab/>;
+      case"bizops":return<BizOpsTab/>;
+      case"moodboard":return<MoodboardTab/>;
+      case"personal":return<PersonalTab/>;
+      default:return null;
+    }
+  };
+
+  return <div style={{minHeight:"100vh",background:`radial-gradient(ellipse at top left,${C.pink}55 0%,${C.lav}33 40%,${C.cream} 80%)`,backgroundAttachment:"fixed"}}>
+    {/* Header */}
+    <div style={{background:`linear-gradient(135deg,${C.charcoal} 0%,#2A1A2A 100%)`,padding:"14px 28px",display:"flex",alignItems:"center",justifyContent:"space-between",boxShadow:"0 2px 20px rgba(0,0,0,0.2)",position:"sticky",top:0,zIndex:100}}>
+      <div style={{display:"flex",alignItems:"center",gap:14}}>
+        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:26,textTransform:"uppercase",letterSpacing:"-0.01em",color:C.pinkMed,lineHeight:1}}>CHELA HQ.</div>
+        <div style={{width:1,height:24,background:"rgba(255,255,255,0.1)"}}/>
+        <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",letterSpacing:"0.08em",textTransform:"uppercase",fontWeight:500}}>{new Date().toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</div>
+      </div>
+      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        {[{n:tasks.filter(t=>t.status==="In Progress").length,l:"Active",c:C.yellow},{n:tasks.filter(t=>t.finishBy===todayStr()&&t.status!=="Done").length,l:"Due Today",c:C.rose},{n:projects.filter(p=>p.status==="Active").length,l:"Projects",c:C.mint}].map(({n,l,c})=><div key={l} style={{background:"rgba(255,255,255,0.06)",borderRadius:10,padding:"5px 12px",textAlign:"center"}}><div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:18,color:c,lineHeight:1}}>{n}</div><div style={{fontSize:9,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.1em"}}>{l}</div></div>)}
+      </div>
+    </div>
+
+    {/* Tabs + Content */}
+    <div style={{padding:"20px 24px 60px",maxWidth:1400,margin:"0 auto"}}>
+      {/* Folder Tabs */}
+      <div style={{display:"flex",flexWrap:"wrap",gap:2,paddingLeft:8,position:"relative",zIndex:2}}>
+        {TABS.map(tab=>{
+          const isActive=activeTab===tab.id;
+          return <div key={tab.id} onClick={()=>setActiveTab(tab.id)} style={{background:isActive?tab.color:`${tab.color}77`,padding:isActive?"10px 18px 14px":"8px 16px 12px",borderRadius:"10px 10px 0 0",border:`2px solid ${isActive?tab.dark:"rgba(0,0,0,0.1)"}`,borderBottom:isActive?`2px solid ${tab.color}`:"2px solid rgba(0,0,0,0.08)",cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,fontSize:12,letterSpacing:"0.05em",color:isActive?C.charcoal:"rgba(0,0,0,0.45)",userSelect:"none",position:"relative",transition:"all 0.12s",whiteSpace:"nowrap",textTransform:"uppercase",zIndex:isActive?3:1,boxShadow:isActive?"0 -3px 10px rgba(0,0,0,0.06)":"none",marginBottom:isActive?0:2}}>{tab.emoji} {tab.label}</div>;
+        })}
+      </div>
+
+      {/* Content Area */}
+      <div style={{background:activeTabObj.content||C.white,borderRadius:"0 12px 12px 12px",border:`2px solid ${activeTabObj.dark}`,padding:"28px 28px 40px",minHeight:600,boxShadow:"0 8px 40px rgba(0,0,0,0.08)",position:"relative",zIndex:1}}>
+        {!inited?<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:400,flexDirection:"column",gap:16}}><div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,fontSize:18,textTransform:"uppercase",letterSpacing:"0.1em",color:C.gray}}>Loading Chela HQ…</div></div>:renderTab()}
+      </div>
+
+      <div style={{textAlign:"center",marginTop:20,fontSize:11,color:"rgba(0,0,0,0.25)",letterSpacing:"0.1em",textTransform:"uppercase",fontWeight:600}}>✦ CMA. HQ · Chela Mitchell Art · chelamitchellart.com ✦</div>
+    </div>
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
