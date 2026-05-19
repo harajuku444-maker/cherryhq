@@ -51,6 +51,7 @@ const TABS=[
   {id:"bizops",  emoji:"⌘",label:"Biz Ops",             color:C.blue,  dark:C.blueMed, content:"#F0F6FF"},
   {id:"moodboard",emoji:"✿",label:"Moodboard",          color:C.rose,  dark:C.roseMed, content:"#FFF0F4"},
   {id:"personal",emoji:"♡",label:"Personal",            color:C.lilac, dark:C.lilacMed,content:"#F8F0FF"},
+  {id:"content",  emoji:"📲",label:"Content Calendar",   color:C.rose,  dark:C.roseMed, content:"#FFF0F4"},
 ];
 
 const AREAS=["C DOT","Gallery","Store","Content","Life","Design","Personal Brand","Admin"];
@@ -1172,6 +1173,199 @@ function PersonalTab(){
   </div>;
 }
 
+
+// ── CONTENT CALENDAR ──────────────────────────────────
+const PLATFORMS=["IG","TikTok","Facebook Reels","Substack","YouTube"];
+const PILLARS=["Gallery Life","Art + Culture","DC Scene","Creative Biz","C DOT.","Personal Brand","Behind the Scenes","Other"];
+const CONTENT_STATUSES=["Idea","Scripted","Filmed","Edited","Scheduled","Posted"];
+const CONTENT_STATUS_COLORS={
+  "Idea":C.lgray,"Scripted":C.lav,"Filmed":C.peach,"Edited":C.yellow,"Scheduled":C.blue,"Posted":C.mint
+};
+const PLATFORM_COLORS={"IG":C.pinkMed,"TikTok":"#444","Facebook Reels":C.blueMed,"Substack":C.yellowMed,"YouTube":"#CC3333"};
+
+function ContentTab(){
+  const [posts,setPosts]=useState([]);
+  const [view,setView]=useState("list");
+  const [modal,setModal]=useState(false);
+  const [editing,setEditing]=useState(null);
+  const [filterPlatform,setFP]=useState("");
+  const [filterStatus,setFS]=useState("");
+  const [filterPillar,setFPL]=useState("");
+  const [weekOffset,setWO]=useState(0);
+  const [form,setForm]=useState({title:"",platform:"IG",pillar:"",status:"Idea",caption:"",postDate:"",notes:""});
+  const [inited,setInited]=useState(false);
+
+  useEffect(()=>{setPosts(store.get("content_posts",[]));setInited(true);},[]);
+  useEffect(()=>{if(inited){store.set("content_posts",posts);}},[posts,inited]);
+
+  const openNew=()=>{setForm({title:"",platform:"IG",pillar:"",status:"Idea",caption:"",postDate:todayStr(),notes:""});setEditing(null);setModal(true);};
+  const openEdit=p=>{setForm({...p});setEditing(p.id);setModal(true);};
+  const save=()=>{
+    if(!form.title.trim())return;
+    if(editing)setPosts(ps=>ps.map(p=>p.id===editing?{...p,...form}:p));
+    else setPosts(ps=>[...ps,{...form,id:uid(),created:todayStr()}]);
+    setModal(false);
+  };
+  const del=id=>setPosts(ps=>ps.filter(p=>p.id!==id));
+  const quickStatus=(id,status)=>setPosts(ps=>ps.map(p=>p.id===id?{...p,status}:p));
+
+  const filtered=posts.filter(p=>{
+    if(filterPlatform&&p.platform!==filterPlatform)return false;
+    if(filterStatus&&p.status!==filterStatus)return false;
+    if(filterPillar&&p.pillar!==filterPillar)return false;
+    return true;
+  });
+
+  // Weekly grid helpers
+  const getWeekDays=()=>{
+    const now=new Date();
+    const startOfWeek=new Date(now);
+    startOfWeek.setDate(now.getDate()-now.getDay()+(weekOffset*7));
+    return Array.from({length:7},(_,i)=>{
+      const d=new Date(startOfWeek);
+      d.setDate(startOfWeek.getDate()+i);
+      return d;
+    });
+  };
+  const weekDays=getWeekDays();
+  const weekStart=weekDays[0];
+  const weekEnd=weekDays[6];
+  const weekLabel2=`${weekStart.toLocaleDateString("en-US",{month:"short",day:"numeric"})} – ${weekEnd.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;
+  const getPostsForDay=d=>{
+    const ds=d.toISOString().slice(0,10);
+    return posts.filter(p=>p.postDate===ds);
+  };
+
+  const DAY_NAMES=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+  // Stats
+  const postedThisWeek=posts.filter(p=>{
+    if(p.status!=="Posted"||!p.postDate)return false;
+    const d=new Date(p.postDate+"T12:00:00");
+    return d>=weekDays[0]&&d<=weekDays[6];
+  }).length;
+  const scheduled=posts.filter(p=>p.status==="Scheduled").length;
+  const ideas=posts.filter(p=>p.status==="Idea").length;
+
+  return <div>
+    {/* Header */}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
+      <SecTitle color={C.roseMed}>Content Calendar 📲</SecTitle>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        <button onClick={()=>setView("list")} style={{padding:"7px 16px",borderRadius:20,border:`2px solid ${C.roseMed}`,background:view==="list"?C.roseMed:"transparent",color:view==="list"?"#fff":C.roseMed,fontWeight:800,fontSize:11,letterSpacing:"0.06em",cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>List</button>
+        <button onClick={()=>setView("week")} style={{padding:"7px 16px",borderRadius:20,border:`2px solid ${C.roseMed}`,background:view==="week"?C.roseMed:"transparent",color:view==="week"?"#fff":C.roseMed,fontWeight:800,fontSize:11,letterSpacing:"0.06em",cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>Week</button>
+        <Btn color={C.roseMed} onClick={openNew}>+ New Post</Btn>
+      </div>
+    </div>
+
+    {/* Stats row */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
+      {[
+        {l:"Total Posts",v:posts.length,c:C.rose,tc:C.roseMed},
+        {l:"Ideas",v:ideas,c:C.lgray,tc:C.gray},
+        {l:"Scheduled",v:scheduled,c:C.blue,tc:C.blueMed},
+        {l:"Posted This Week",v:postedThisWeek,c:C.mint,tc:C.mintDeep},
+      ].map(({l,v,c,tc})=><Card key={l} color={c} style={{textAlign:"center",padding:"14px 10px"}}>
+        <Lbl style={{color:tc,marginBottom:4}}>{l}</Lbl>
+        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:28,color:tc}}>{v}</div>
+      </Card>)}
+    </div>
+
+    {/* Platform breakdown */}
+    <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
+      {PLATFORMS.map(p=>{
+        const n=posts.filter(x=>x.platform===p).length;
+        return <div key={p} style={{background:PLATFORM_COLORS[p]||C.gray,borderRadius:10,padding:"5px 14px",fontSize:12,fontWeight:700,color:"#fff",opacity:n===0?0.35:1}}>{p}: {n}</div>;
+      })}
+    </div>
+
+    {/* LIST VIEW */}
+    {view==="list"&&<div>
+      {/* Filters */}
+      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        <Sel value={filterPlatform} onChange={setFP} options={[{v:"",l:"All Platforms"},...PLATFORMS]} style={{width:160}}/>
+        <Sel value={filterStatus} onChange={setFS} options={[{v:"",l:"All Status"},...CONTENT_STATUSES]} style={{width:150}}/>
+        <Sel value={filterPillar} onChange={setFPL} options={[{v:"",l:"All Pillars"},...PILLARS]} style={{width:180}}/>
+      </div>
+
+      <div style={{background:C.white,borderRadius:12,overflow:"hidden",border:`1.5px solid rgba(0,0,0,0.07)`}}>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 90px 120px 110px 110px 40px",background:C.rose,padding:"10px 16px",fontSize:11,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:C.roseMed}}>
+          <span>Title / Caption</span><span>Platform</span><span>Pillar</span><span>Status</span><span>Post Date</span><span></span>
+        </div>
+        {filtered.length===0&&<div style={{padding:32,textAlign:"center",color:C.gray,fontStyle:"italic",fontSize:14}}>No content yet. Every empire starts with one post. 📲</div>}
+        {filtered.sort((a,b)=>(a.postDate||"9999").localeCompare(b.postDate||"9999")).map((p,i)=><div key={p.id} style={{display:"grid",gridTemplateColumns:"2fr 90px 120px 110px 110px 40px",padding:"11px 16px",borderBottom:`1px solid ${C.lgray}`,background:i%2===0?C.white:"#FFF8FA",alignItems:"center",cursor:"pointer"}} onClick={()=>openEdit(p)}>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:p.status==="Posted"?"#aaa":C.charcoal,textDecoration:p.status==="Posted"?"line-through":"none",marginBottom:2}}>{p.title}</div>
+            {p.caption&&<div style={{fontSize:11,color:C.gray,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:300}}>{p.caption}</div>}
+          </div>
+          <span style={{display:"inline-block",background:PLATFORM_COLORS[p.platform]||C.gray,borderRadius:10,padding:"2px 8px",fontSize:10,fontWeight:700,color:"#fff",whiteSpace:"nowrap"}}>{p.platform}</span>
+          <span style={{fontSize:11,color:C.gray}}>{p.pillar||"—"}</span>
+          <div onClick={e=>e.stopPropagation()}>
+            <select value={p.status} onChange={e=>quickStatus(p.id,e.target.value)} style={{background:CONTENT_STATUS_COLORS[p.status]||C.lgray,border:"none",borderRadius:10,padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer",color:C.charcoal,outline:"none",fontFamily:"inherit"}}>
+              {CONTENT_STATUSES.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <span style={{fontSize:12,color:C.gray}}>{fmtDate(p.postDate)}</span>
+          <button onClick={e=>{e.stopPropagation();del(p.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#ddd",fontSize:16}}>×</button>
+        </div>)}
+      </div>
+
+      {/* Status summary */}
+      <div style={{display:"flex",gap:10,marginTop:14,flexWrap:"wrap"}}>
+        {CONTENT_STATUSES.map(s=>{const n=posts.filter(p=>p.status===s).length;return<div key={s} style={{background:CONTENT_STATUS_COLORS[s]||C.lgray,borderRadius:10,padding:"4px 12px",fontSize:11,fontWeight:700,color:C.charcoal}}>{s}: {n}</div>;})}
+      </div>
+    </div>}
+
+    {/* WEEKLY GRID VIEW */}
+    {view==="week"&&<div>
+      <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16}}>
+        <button onClick={()=>setWO(o=>o-1)} style={{background:C.rose,border:"none",borderRadius:20,padding:"6px 14px",cursor:"pointer",fontWeight:800,fontSize:14,color:C.roseMed}}>←</button>
+        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,fontSize:18,textTransform:"uppercase",letterSpacing:"0.05em",color:C.charcoal}}>{weekLabel2}</div>
+        <button onClick={()=>setWO(o=>o+1)} style={{background:C.rose,border:"none",borderRadius:20,padding:"6px 14px",cursor:"pointer",fontWeight:800,fontSize:14,color:C.roseMed}}>→</button>
+        <button onClick={()=>setWO(0)} style={{background:"none",border:`1.5px solid ${C.roseMed}`,borderRadius:16,padding:"4px 12px",cursor:"pointer",fontSize:11,fontWeight:700,color:C.roseMed}}>Today</button>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8}}>
+        {weekDays.map((day,di)=>{
+          const dayPosts=getPostsForDay(day);
+          const isToday=day.toISOString().slice(0,10)===todayStr();
+          return <div key={di} style={{minHeight:160,background:isToday?C.pink+"55":C.white,borderRadius:12,border:`1.5px solid ${isToday?C.pinkMed:"rgba(0,0,0,0.07)"}`,padding:10,boxShadow:isToday?"0 0 0 2px "+C.pinkMed:"none"}}>
+            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,fontSize:13,textTransform:"uppercase",letterSpacing:"0.06em",color:isToday?C.pinkDeep:C.gray,marginBottom:4}}>{DAY_NAMES[day.getDay()]}</div>
+            <div style={{fontSize:11,color:isToday?C.pinkDeep:C.gray,marginBottom:8,fontWeight:isToday?700:400}}>{day.toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>
+            {dayPosts.length===0&&<div style={{fontSize:11,color:"#ccc",fontStyle:"italic"}}>—</div>}
+            {dayPosts.map(p=><div key={p.id} onClick={()=>openEdit(p)} style={{background:CONTENT_STATUS_COLORS[p.status]||C.lgray,borderRadius:8,padding:"5px 8px",marginBottom:5,cursor:"pointer",borderLeft:`3px solid ${PLATFORM_COLORS[p.platform]||C.gray}`}}>
+              <div style={{fontSize:10,fontWeight:700,color:PLATFORM_COLORS[p.platform]||C.gray,marginBottom:2,textTransform:"uppercase",letterSpacing:"0.05em"}}>{p.platform}</div>
+              <div style={{fontSize:12,fontWeight:600,color:C.charcoal,lineHeight:1.3,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{p.title}</div>
+            </div>)}
+            <button onClick={()=>{setForm({title:"",platform:"IG",pillar:"",status:"Idea",caption:"",postDate:day.toISOString().slice(0,10),notes:""});setEditing(null);setModal(true);}} style={{background:"none",border:`1px dashed ${C.roseMed}`,borderRadius:8,padding:"3px 0",width:"100%",fontSize:10,cursor:"pointer",color:C.roseMed,marginTop:4,fontWeight:700}}>+ add</button>
+          </div>;
+        })}
+      </div>
+    </div>}
+
+    {/* Modal */}
+    <Modal open={modal} onClose={()=>setModal(false)} title={editing?"Edit Post":"New Post"} color={C.roseMed}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div><Lbl>Post Title / Hook</Lbl><Inp value={form.title} onChange={v=>setForm({...form,title:v})} placeholder="What's the post about?"/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><Lbl>Platform</Lbl><Sel value={form.platform} onChange={v=>setForm({...form,platform:v})} options={PLATFORMS}/></div>
+          <div><Lbl>Content Pillar</Lbl><Sel value={form.pillar} onChange={v=>setForm({...form,pillar:v})} options={PILLARS}/></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><Lbl>Status</Lbl><Sel value={form.status} onChange={v=>setForm({...form,status:v})} options={CONTENT_STATUSES}/></div>
+          <div><Lbl>Post Date</Lbl><Inp type="date" value={form.postDate} onChange={v=>setForm({...form,postDate:v})}/></div>
+        </div>
+        <div><Lbl>Caption / Copy</Lbl><Txta value={form.caption} onChange={v=>setForm({...form,caption:v})} placeholder="Write your caption here…" rows={4}/></div>
+        <div><Lbl>Notes</Lbl><Txta value={form.notes} onChange={v=>setForm({...form,notes:v})} placeholder="Hook ideas, hashtags, links, collab notes…" rows={2}/></div>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <Btn outline color={C.gray} sm onClick={()=>setModal(false)}>Cancel</Btn>
+          <Btn color={C.roseMed} onClick={save}>{editing?"Save Changes":"Add Post"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  </div>;
+}
+
 // ── MAIN APP ──────────────────────────────────────────
 function App(){
   const [activeTab,setActiveTab]=useState("hq");
@@ -1199,6 +1393,7 @@ function App(){
       case"bizops":return<BizOpsTab/>;
       case"moodboard":return<MoodboardTab/>;
       case"personal":return<PersonalTab/>;
+      case"content":return<ContentTab/>;
       default:return null;
     }
   };
