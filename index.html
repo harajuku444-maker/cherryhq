@@ -80,10 +80,44 @@ const DEFAULT_AFFIRMATIONS=[
   "Rest is productive. Joy is strategy.",
 ];
 
-// ── STORAGE (localStorage) ────────────────────────────
+// ── STORAGE (localStorage + Google Sheets sync) ─────
 const store={
-  get(key,def=null){try{const v=localStorage.getItem("chelahq_"+key);return v!==null?JSON.parse(v):def;}catch{return def;}},
-  set(key,val){try{localStorage.setItem("chelahq_"+key,JSON.stringify(val));}catch(e){console.error(e);}},
+  _url:localStorage.getItem("chelahq_syncurl")||"",
+  get(key,def=null){
+    try{const v=localStorage.getItem("chelahq_"+key);return v!==null?JSON.parse(v):def;}
+    catch{return def;}
+  },
+  set(key,val){
+    try{
+      const str=JSON.stringify(val);
+      localStorage.setItem("chelahq_"+key,str);
+      if(this._url){
+        fetch(this._url,{
+          method:"POST",
+          headers:{"Content-Type":"text/plain"},
+          body:JSON.stringify({key:"chelahq_"+key,value:str})
+        }).catch(()=>{});
+      }
+    }catch(e){console.error(e);}
+  },
+  setUrl(url){
+    this._url=url;
+    localStorage.setItem("chelahq_syncurl",url);
+  },
+  async syncAll(){
+    if(!this._url)return{ok:false,msg:"No sync URL set."};
+    try{
+      const r=await fetch(this._url+"?action=getAll",{cache:"no-cache"});
+      const data=await r.json();
+      if(data.success&&data.data){
+        Object.entries(data.data).forEach(([k,v])=>{
+          if(k.startsWith("chelahq_"))localStorage.setItem(k,v);
+        });
+        return{ok:true,msg:`Synced ${Object.keys(data.data).length} items from cloud. Reload to see latest data.`};
+      }
+      return{ok:false,msg:"Sync failed: "+JSON.stringify(data)};
+    }catch(e){return{ok:false,msg:"Sync error: "+e.message};}
+  }
 };
 
 // ── UTILS ─────────────────────────────────────────────
@@ -1366,6 +1400,53 @@ function ContentTab(){
   </div>;
 }
 
+
+// ── SYNC BUTTON COMPONENT ─────────────────────────────
+function SyncButton(){
+  const [open,setOpen]=useState(false);
+  const [url,setUrl]=useState(store._url||"");
+  const [status,setStatus]=useState("");
+  const [syncing,setSyncing]=useState(false);
+
+  const saveUrl=()=>{
+    store.setUrl(url.trim());
+    setStatus("URL saved. Click Sync Now to pull your data.");
+  };
+
+  const doSync=async()=>{
+    if(!store._url){setStatus("Paste your Apps Script URL first.");return;}
+    setSyncing(true);
+    setStatus("Syncing…");
+    const result=await store.syncAll();
+    setStatus(result.msg);
+    setSyncing(false);
+    if(result.ok){setTimeout(()=>window.location.reload(),1500);}
+  };
+
+  return <div style={{position:"relative"}}>
+    <button onClick={()=>setOpen(o=>!o)} style={{background:store._url?"rgba(195,192,219,0.25)":"rgba(255,255,255,0.06)",border:`1.5px solid ${store._url?C.lavMed:"rgba(255,255,255,0.15)"}`,borderRadius:10,padding:"5px 12px",cursor:"pointer",color:store._url?C.lavMed:"rgba(255,255,255,0.4)",fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",fontFamily:"'Barlow Condensed',sans-serif",display:"flex",alignItems:"center",gap:6}}>
+      {store._url?"☁ Sync On":"☁ Set Sync"}
+    </button>
+    {open&&<div style={{position:"absolute",right:0,top:"calc(100% + 8px)",background:C.charcoal,border:`1.5px solid ${C.lavMed}`,borderRadius:14,padding:20,width:360,zIndex:999,boxShadow:"0 12px 40px rgba(0,0,0,0.4)"}}>
+      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:16,textTransform:"uppercase",letterSpacing:"0.06em",color:C.lavMed,marginBottom:12}}>☁ Cloud Sync</div>
+      <div style={{fontSize:12,color:"rgba(255,255,255,0.5)",lineHeight:1.6,marginBottom:14}}>Paste your Google Apps Script URL to sync data across all your devices.</div>
+      <div style={{display:"flex",gap:8,marginBottom:10}}>
+        <input value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://script.google.com/macros/s/…/exec" style={{flex:1,background:"rgba(255,255,255,0.08)",border:`1.5px solid ${C.lavMed}44`,borderRadius:8,padding:"7px 10px",fontSize:11,color:"#fff",outline:"none",fontFamily:"inherit"}}/>
+        <button onClick={saveUrl} style={{background:C.lavMed,border:"none",borderRadius:8,padding:"7px 14px",cursor:"pointer",color:"#fff",fontSize:11,fontWeight:800,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase",whiteSpace:"nowrap"}}>Save</button>
+      </div>
+      <button onClick={doSync} disabled={syncing} style={{background:syncing?"rgba(255,255,255,0.1)":C.pinkMed,border:"none",borderRadius:8,padding:"8px 0",cursor:syncing?"not-allowed":"pointer",color:"#fff",fontSize:12,fontWeight:800,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase",width:"100%",marginBottom:10}}>
+        {syncing?"Syncing…":"↓ Sync Now (pull from cloud)"}
+      </button>
+      {status&&<div style={{fontSize:11,color:status.includes("error")||status.includes("failed")?"#FFB0B0":"#B0FFD0",lineHeight:1.5,marginBottom:8}}>{status}</div>}
+      <div style={{fontSize:10,color:"rgba(255,255,255,0.25)",lineHeight:1.6,borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:10}}>
+        Data auto-saves to cloud on every change once URL is set.<br/>
+        On a new device: paste URL → Save → Sync Now → reload.
+      </div>
+      <button onClick={()=>setOpen(false)} style={{background:"none",border:"none",cursor:"pointer",color:"rgba(255,255,255,0.3)",fontSize:11,marginTop:8,display:"block",width:"100%",textAlign:"right"}}>close ×</button>
+    </div>}
+  </div>;
+}
+
 // ── MAIN APP ──────────────────────────────────────────
 function App(){
   const [activeTab,setActiveTab]=useState("hq");
@@ -1406,8 +1487,9 @@ function App(){
         <div style={{width:1,height:24,background:"rgba(255,255,255,0.1)"}}/>
         <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",letterSpacing:"0.08em",textTransform:"uppercase",fontWeight:500}}>{new Date().toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</div>
       </div>
-      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
         {[{n:tasks.filter(t=>t.status==="In Progress").length,l:"Active",c:C.yellow},{n:tasks.filter(t=>t.finishBy===todayStr()&&t.status!=="Done").length,l:"Due Today",c:C.rose},{n:projects.filter(p=>p.status==="Active").length,l:"Projects",c:C.mint}].map(({n,l,c})=><div key={l} style={{background:"rgba(255,255,255,0.06)",borderRadius:10,padding:"5px 12px",textAlign:"center"}}><div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:18,color:c,lineHeight:1}}>{n}</div><div style={{fontSize:9,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.1em"}}>{l}</div></div>)}
+        <SyncButton/>
       </div>
     </div>
 
