@@ -38,8 +38,8 @@ const C={
   blue:"#C4DCFA",blueMed:"#78A8E0",blueDeep:"#2860B0",
   rose:"#F5C4D4",roseMed:"#D87898",
   lilac:"#DFC8F5",lilacMed:"#A870D8",lilacDeep:"#6830A0",
-  clay:"#E0B8A0",clayMed:"#C68860",clayDeep:"#8A5838",
   charcoal:"#1A1A1A",gray:"#888",lgray:"#E8E8E8",
+  teal:"#B8E8E0",tealMed:"#4AA89C",tealDeep:"#2A7068",
   cream:"#FDF8F5",white:"#fff",
 };
 
@@ -47,8 +47,8 @@ const TABS=[
   {id:"hq",      emoji:"✦",label:"Chela HQ",           color:C.pink,  dark:C.pinkMed, content:"#FFF0F6"},
   {id:"tasks",   emoji:"✔",label:"Tasks for the Doll",  color:C.mint,  dark:C.mintMed, content:"#F0FBF6"},
   {id:"projects",emoji:"◈",label:"Projects",            color:C.lav,   dark:C.lavMed,  content:"#F4F0FF"},
+  {id:"artists",  emoji:"🎨",label:"Artists",             color:C.teal,  dark:C.tealMed, content:"#F0FBF8"},
   {id:"money",   emoji:"💸",label:"Money + Invoices",   color:C.peach, dark:C.peachMed,content:"#FFF6F0"},
-  {id:"inventory",emoji:"🖼",label:"Gallery Inventory",  color:C.clay,  dark:C.clayMed, content:"#FDF3EC"},
   {id:"reset",   emoji:"↻",label:"Reset Studio",        color:C.yellow,dark:C.yellowMed,content:"#FFFDF0"},
   {id:"bizops",  emoji:"⌘",label:"Biz Ops",             color:C.blue,  dark:C.blueMed, content:"#F0F6FF"},
   {id:"moodboard",emoji:"✿",label:"Moodboard",          color:C.rose,  dark:C.roseMed, content:"#FFF0F4"},
@@ -62,14 +62,17 @@ const PROJ_STATUSES=["Planning","Active","Paused","Complete","Archived"];
 const INV_STATUSES=["Draft","Sent","Paid","Overdue"];
 const RUNWAY_CATS=["Gallery","Public Art / Advisory","Social Media Content","C DOT.","Personal","Family"];
 const PROJ_TYPES=["Gallery","Public Art","Content","C DOT","Business Dev","Personal","Admin"];
+const ARTIST_DISCIPLINES=["Painting","Sculpture","Mixed Media","Muralist / Public Art","Photography","Textile / Fiber","Digital / New Media","Installation","Illustration","Ceramics","Other"];
+const ARTIST_PROJECT_TYPES=["Gallery Show","Public Art","Both","Not Yet Determined"];
+const ARTIST_STATUSES=["Considering","Contacted","In Talks","Confirmed","Past Collaborator","Archived"];
 const PHONE="+12026993787";
 
 const STATUS_COLORS={
   "Not Started":C.lgray,"In Progress":C.yellow,"Done":C.mint,"Blocked":"#FFBBBB",
   "Planning":C.lav,"Active":C.mint,"Paused":C.peach,"Complete":"#B8F0C8","Archived":C.lgray,
   "Draft":C.lgray,"Sent":C.blue,"Paid":"#B8F0C8","Overdue":"#FFBBBB",
+  "Considering":C.lgray,"Contacted":C.yellow,"In Talks":C.peach,"Confirmed":C.mint,"Past Collaborator":C.lav,
   "Income":"#C0F0D0","Expense":"#FFD0D0",
-  "Available":"#B8F0C8","On Hold":C.yellow,"Sold":C.lav,"Consigned":C.blue,"In Storage":C.lgray,
 };
 
 const DEFAULT_AFFIRMATIONS=[
@@ -97,6 +100,27 @@ const fmtMoney=n=>"$"+Number(n||0).toLocaleString("en-US",{minimumFractionDigits
 const openSMS=body=>{window.location.href=`sms:${PHONE}?body=${encodeURIComponent(body)}`;};
 const weekLabel=()=>{const d=new Date();const s=new Date(d);s.setDate(d.getDate()-d.getDay());const e=new Date(s);e.setDate(s.getDate()+6);return`${s.toLocaleDateString("en-US",{month:"short",day:"numeric"})} – ${e.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;};
 const getDayAff=list=>list&&list.length?list[new Date().getDay()%list.length]:"";
+
+// Resize + compress an uploaded image file into a small base64 JPEG (keeps localStorage light)
+const resizeImage=(file,maxDim=480,quality=0.82)=>new Promise((resolve,reject)=>{
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{
+      let{width,height}=img;
+      if(width>height){if(width>maxDim){height=Math.round(height*maxDim/width);width=maxDim;}}
+      else{if(height>maxDim){width=Math.round(width*maxDim/height);height=maxDim;}}
+      const canvas=document.createElement("canvas");
+      canvas.width=width;canvas.height=height;
+      canvas.getContext("2d").drawImage(img,0,0,width,height);
+      resolve(canvas.toDataURL("image/jpeg",quality));
+    };
+    img.onerror=reject;
+    img.src=e.target.result;
+  };
+  reader.onerror=reject;
+  reader.readAsDataURL(file);
+});
 
 // ── SHARED UI ─────────────────────────────────────────
 const Sparkle=({size=14,color=C.pinkMed})=>(
@@ -424,6 +448,109 @@ function ProjectsTab({projects,setProjects}){
   </div>;
 }
 
+// ── ARTISTS TAB ────────────────────────────────
+function ArtistsTab({artists,setArtists}){
+  const emptyForm={name:"",discipline:"",projectType:"",status:"Considering",location:"",email:"",phone:"",instagram:"",website:"",notes:"",image:""};
+  const [modal,setModal]=useState(false);
+  const [editing,setEditing]=useState(null);
+  const [form,setForm]=useState(emptyForm);
+  const [uploading,setUploading]=useState(false);
+  const [filterDiscipline,setFilterDiscipline]=useState("");
+  const [filterType,setFilterType]=useState("");
+  const [filterStatus,setFilterStatus]=useState("");
+
+  const openNew=()=>{setForm(emptyForm);setEditing(null);setModal(true);};
+  const openEdit=a=>{setForm({...emptyForm,...a});setEditing(a.id);setModal(true);};
+  const save=()=>{if(!form.name.trim())return;if(editing)setArtists(as=>as.map(a=>a.id===editing?{...a,...form}:a));else setArtists(as=>[...as,{...form,id:uid(),created:todayStr()}]);setModal(false);};
+  const del=id=>setArtists(as=>as.filter(a=>a.id!==id));
+
+  const handleImage=async file=>{
+    if(!file)return;
+    setUploading(true);
+    try{const dataUrl=await resizeImage(file);setForm(f=>({...f,image:dataUrl}));}
+    catch(e){console.error(e);}
+    setUploading(false);
+  };
+
+  const filtered=artists.filter(a=>{
+    if(filterDiscipline&&a.discipline!==filterDiscipline)return false;
+    if(filterType&&a.projectType!==filterType)return false;
+    if(filterStatus&&a.status!==filterStatus)return false;
+    return true;
+  });
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
+      <SecTitle color={C.tealDeep}>Artists 🎨</SecTitle>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <Sel value={filterDiscipline} onChange={setFilterDiscipline} options={[{v:"",l:"All Disciplines"},...ARTIST_DISCIPLINES]} style={{width:170}}/>
+        <Sel value={filterType} onChange={setFilterType} options={[{v:"",l:"All Project Types"},...ARTIST_PROJECT_TYPES]} style={{width:170}}/>
+        <Sel value={filterStatus} onChange={setFilterStatus} options={[{v:"",l:"All Status"},...ARTIST_STATUSES]} style={{width:150}}/>
+        <Btn color={C.tealMed} onClick={openNew}>+ New Artist</Btn>
+      </div>
+    </div>
+
+    {filtered.length===0&&<div style={{padding:40,textAlign:"center",color:C.gray,fontStyle:"italic",fontSize:14,border:`1.5px dashed ${C.lgray}`,borderRadius:12}}>No artists yet. Add one to start building your roster for gallery shows and public art projects. ✦</div>}
+
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:16}}>
+      {filtered.map(a=>(
+        <div key={a.id} style={{background:C.white,borderRadius:14,border:`1.5px solid rgba(0,0,0,0.07)`,overflow:"hidden",cursor:"pointer",boxShadow:"0 2px 10px rgba(0,0,0,0.05)"}} onClick={()=>openEdit(a)}>
+          <div style={{width:"100%",aspectRatio:"1",background:a.image?`center/cover no-repeat url(${a.image})`:C.teal+"55",display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
+            {!a.image&&<span style={{fontSize:36,opacity:0.5}}>🎨</span>}
+            <button onClick={e=>{e.stopPropagation();del(a.id);}} style={{position:"absolute",top:8,right:8,background:"rgba(0,0,0,0.45)",border:"none",color:"#fff",borderRadius:"50%",width:24,height:24,cursor:"pointer",fontSize:14,lineHeight:1}}>×</button>
+          </div>
+          <div style={{padding:14}}>
+            <div style={{fontWeight:700,fontSize:15,color:C.charcoal,marginBottom:4,lineHeight:1.3}}>{a.name}</div>
+            <div style={{fontSize:11,color:C.tealDeep,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>{a.discipline||"—"}</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <StatusTag status={a.status}/>
+              {a.projectType&&<span style={{background:C.lgray,borderRadius:10,padding:"2px 9px",fontSize:11,fontWeight:700,color:C.charcoal}}>{a.projectType}</span>}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    <Modal open={modal} onClose={()=>setModal(false)} title={editing?"Edit Artist":"New Artist"} color={C.tealMed}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+          <div style={{width:100,height:100,borderRadius:12,overflow:"hidden",background:form.image?`center/cover no-repeat url(${form.image})`:C.lgray,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            {!form.image&&<span style={{fontSize:28,opacity:0.4}}>🎨</span>}
+          </div>
+          <div style={{flex:1}}>
+            <Lbl>Artwork Style Photo</Lbl>
+            <input type="file" accept="image/*" onChange={e=>handleImage(e.target.files[0])} style={{fontSize:12}}/>
+            {uploading&&<div style={{fontSize:11,color:C.gray,marginTop:4}}>Processing image…</div>}
+            {form.image&&<div style={{marginTop:6}}><Btn sm outline color={C.gray} onClick={()=>setForm(f=>({...f,image:""}))}>Remove Photo</Btn></div>}
+          </div>
+        </div>
+        <div><Lbl>Artist Name</Lbl><Inp value={form.name} onChange={v=>setForm({...form,name:v})} placeholder="Artist name"/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><Lbl>Discipline / Medium</Lbl><Sel value={form.discipline} onChange={v=>setForm({...form,discipline:v})} options={ARTIST_DISCIPLINES}/></div>
+          <div><Lbl>Project Type</Lbl><Sel value={form.projectType} onChange={v=>setForm({...form,projectType:v})} options={ARTIST_PROJECT_TYPES}/></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><Lbl>Status</Lbl><Sel value={form.status} onChange={v=>setForm({...form,status:v})} options={ARTIST_STATUSES}/></div>
+          <div><Lbl>Location</Lbl><Inp value={form.location} onChange={v=>setForm({...form,location:v})} placeholder="City, state"/></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><Lbl>Email</Lbl><Inp value={form.email} onChange={v=>setForm({...form,email:v})} placeholder="email@example.com"/></div>
+          <div><Lbl>Phone</Lbl><Inp value={form.phone} onChange={v=>setForm({...form,phone:v})} placeholder="Phone"/></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><Lbl>Instagram</Lbl><Inp value={form.instagram} onChange={v=>setForm({...form,instagram:v})} placeholder="@handle"/></div>
+          <div><Lbl>Website / Portfolio</Lbl><Inp value={form.website} onChange={v=>setForm({...form,website:v})} placeholder="Portfolio URL"/></div>
+        </div>
+        <div><Lbl>Notes</Lbl><Txta value={form.notes} onChange={v=>setForm({...form,notes:v})} rows={3} placeholder="Style notes, show history, conversation notes…"/></div>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <Btn outline color={C.gray} sm onClick={()=>setModal(false)}>Cancel</Btn>
+          <Btn color={C.tealMed} onClick={save}>{editing?"Save Changes":"Add Artist"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  </div>;
+}
+
 // ── MONEY TAB ─────────────────────────────────────────
 function MoneyTab(){
   const [money,setMoney]=useState([]);
@@ -537,121 +664,6 @@ function MoneyTab(){
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}><div><Lbl>Due Date</Lbl><Inp type="date" value={iForm.dueDate} onChange={v=>setIForm({...iForm,dueDate:v})}/></div><div><Lbl>Status</Lbl><Sel value={iForm.status} onChange={v=>setIForm({...iForm,status:v})} options={INV_STATUSES}/></div></div>
         <div><Lbl>Notes</Lbl><Txta value={iForm.notes} onChange={v=>setIForm({...iForm,notes:v})} rows={2}/></div>
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><Btn outline color={C.gray} sm onClick={()=>setIModal(false)}>Cancel</Btn><Btn color={C.peachMed} onClick={saveInvoice}>{editId?"Save":"Create"}</Btn></div>
-      </div>
-    </Modal>
-  </div>;
-}
-
-// ── GALLERY INVENTORY ─────────────────────────────────
-const INV_ART_STATUSES=["Available","On Hold","Sold","Consigned","In Storage"];
-
-function GalleryInventoryTab(){
-  const [items,setItems]=useState([]);
-  const [modal,setModal]=useState(false);
-  const [editId,setEditId]=useState(null);
-  const [filterStatus,setFilterStatus]=useState("");
-  const [search,setSearch]=useState("");
-  const [form,setForm]=useState({title:"",artist:"",medium:"",dimensions:"",year:"",price:"",status:"Available",client:"",location:"",notes:"",image:""});
-  const [inited,setInited]=useState(false);
-  const fileRef=useRef(null);
-
-  useEffect(()=>{setItems(store.get("gallery_inventory",[]));setInited(true);},[]);
-  useEffect(()=>{if(inited){store.set("gallery_inventory",items);}},[items,inited]);
-
-  const openNew=()=>{setForm({title:"",artist:"",medium:"",dimensions:"",year:"",price:"",status:"Available",client:"",location:"",notes:"",image:""});setEditId(null);setModal(true);};
-  const openEdit=it=>{setForm({...it});setEditId(it.id);setModal(true);};
-  const save=()=>{if(!form.title.trim())return;if(editId)setItems(xs=>xs.map(x=>x.id===editId?{...x,...form}:x));else setItems(xs=>[{...form,id:uid(),added:todayStr()},...xs]);setModal(false);};
-  const del=id=>setItems(xs=>xs.filter(x=>x.id!==id));
-
-  const handleImage=e=>{
-    const file=e.target.files&&e.target.files[0];
-    if(!file)return;
-    const reader=new FileReader();
-    reader.onload=ev=>setForm(f=>({...f,image:ev.target.result}));
-    reader.readAsDataURL(file);
-  };
-
-  const filtered=items.filter(it=>{
-    if(filterStatus&&it.status!==filterStatus)return false;
-    if(search&&!(`${it.title} ${it.artist}`.toLowerCase().includes(search.toLowerCase())))return false;
-    return true;
-  });
-
-  const totalValue=items.filter(i=>i.status!=="Sold").reduce((s,i)=>s+Number(i.price||0),0);
-
-  return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
-      <SecTitle color={C.clayMed}>Gallery Inventory 🖼</SecTitle>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <Inp value={search} onChange={setSearch} placeholder="Search title or artist…" style={{width:180}}/>
-        <Sel value={filterStatus} onChange={setFilterStatus} options={[{v:"",l:"All Status"},...INV_ART_STATUSES]} style={{width:150}}/>
-        <Btn color={C.clayMed} onClick={openNew}>+ Add Artwork</Btn>
-      </div>
-    </div>
-
-    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:20}}>
-      <Card color={C.clay+"55"} style={{textAlign:"center"}}><Lbl style={{marginBottom:6}}>Total Pieces</Lbl><div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:30,color:C.clayDeep}}>{items.length}</div></Card>
-      <Card color={"#B8F0C8"} style={{textAlign:"center"}}><Lbl style={{marginBottom:6}}>Available</Lbl><div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:30,color:C.mintDeep}}>{items.filter(i=>i.status==="Available").length}</div></Card>
-      <Card color={C.clay+"55"} style={{textAlign:"center"}}><Lbl style={{marginBottom:6}}>Inventory Value</Lbl><div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:26,color:C.clayDeep}}>{fmtMoney(totalValue)}</div></Card>
-    </div>
-
-    {filtered.length===0&&<div style={{textAlign:"center",padding:60,color:C.gray,fontSize:14,fontStyle:"italic"}}>No artwork logged yet. Add your first piece. 🖼</div>}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:16}}>
-      {filtered.map(it=><div key={it.id} style={{background:C.white,borderRadius:14,border:`1.5px solid rgba(0,0,0,0.07)`,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",cursor:"pointer"}} onClick={()=>openEdit(it)}>
-        <div style={{width:"100%",height:180,background:C.lgray,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-          {it.image?<img src={it.image} alt={it.title} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:34,opacity:0.3}}>🖼</span>}
-        </div>
-        <div style={{padding:14}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
-            <div style={{fontWeight:700,fontSize:14,color:C.charcoal,lineHeight:1.3,paddingRight:6}}>{it.title}</div>
-            <button onClick={e=>{e.stopPropagation();del(it.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#ccc",fontSize:15,flexShrink:0}}>×</button>
-          </div>
-          {it.artist&&<div style={{fontSize:12,color:C.clayDeep,fontWeight:700,marginBottom:6}}>{it.artist}</div>}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <StatusTag status={it.status}/>
-            {it.price&&<span style={{fontSize:13,fontWeight:700,color:C.charcoal}}>{fmtMoney(it.price)}</span>}
-          </div>
-        </div>
-      </div>)}
-    </div>
-
-    <Modal open={modal} onClose={()=>setModal(false)} title={editId?"Edit Artwork":"Add Artwork"} color={C.clayMed}>
-      <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <div>
-          <Lbl>Artwork Photo</Lbl>
-          <div style={{display:"flex",gap:12,alignItems:"center"}}>
-            <div style={{width:90,height:90,borderRadius:10,background:C.lgray,overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
-              {form.image?<img src={form.image} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:22,opacity:0.3}}>🖼</span>}
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              <input ref={fileRef} type="file" accept="image/*" onChange={handleImage} style={{display:"none"}}/>
-              <Btn sm outline color={C.clayMed} onClick={()=>fileRef.current&&fileRef.current.click()}>{form.image?"Change Photo":"Upload Photo"}</Btn>
-              {form.image&&<Btn sm outline color={C.gray} onClick={()=>setForm(f=>({...f,image:""}))}>Remove</Btn>}
-            </div>
-          </div>
-        </div>
-        <div><Lbl>Title</Lbl><Inp value={form.title} onChange={v=>setForm({...form,title:v})} placeholder="Artwork title"/></div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          <div><Lbl>Artist</Lbl><Inp value={form.artist} onChange={v=>setForm({...form,artist:v})} placeholder="Artist name"/></div>
-          <div><Lbl>Year</Lbl><Inp value={form.year} onChange={v=>setForm({...form,year:v})} placeholder="e.g. 2024"/></div>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          <div><Lbl>Medium</Lbl><Inp value={form.medium} onChange={v=>setForm({...form,medium:v})} placeholder="e.g. Oil on canvas"/></div>
-          <div><Lbl>Dimensions</Lbl><Inp value={form.dimensions} onChange={v=>setForm({...form,dimensions:v})} placeholder='e.g. 24&quot; x 36&quot;'/></div>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          <div><Lbl>Price ($)</Lbl><Inp type="number" value={form.price} onChange={v=>setForm({...form,price:v})} placeholder="0.00"/></div>
-          <div><Lbl>Status</Lbl><Sel value={form.status} onChange={v=>setForm({...form,status:v})} options={INV_ART_STATUSES}/></div>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          <div><Lbl>Client / Buyer</Lbl><Inp value={form.client} onChange={v=>setForm({...form,client:v})} placeholder="If sold or on hold…"/></div>
-          <div><Lbl>Location</Lbl><Inp value={form.location} onChange={v=>setForm({...form,location:v})} placeholder="e.g. Studio, Storage, On View"/></div>
-        </div>
-        <div><Lbl>Notes</Lbl><Txta value={form.notes} onChange={v=>setForm({...form,notes:v})} rows={3} placeholder="Provenance, condition, framing, etc."/></div>
-        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-          <Btn outline color={C.gray} sm onClick={()=>setModal(false)}>Cancel</Btn>
-          <Btn color={C.clayMed} onClick={save}>{editId?"Save Changes":"Add Artwork"}</Btn>
-        </div>
       </div>
     </Modal>
   </div>;
@@ -791,10 +803,10 @@ function ResetTab(){
   const [monthlyResets,setMR]=useState([]);
   const [wAudits,setWA]=useState([]);
   const [mAudits,setMA]=useState([]);
-  const [wChecks,setWC]=useState({});   // {catIdx_itemIdx: bool}
-  const [mChecks,setMC]=useState({});
   const [wForm,setWF]=useState({weekOf:todayStr(),wins:"",improve:"",gratitude:"",nextFocus:"",rating:5});
   const [mForm,setMF]=useState({month:new Date().getMonth()+1,year:new Date().getFullYear(),bigWins:"",challenges:"",lessons:"",nextGoals:"",rating:5});
+  const [wChecks,setWC]=useState({});   // {catIdx_itemIdx: bool}
+  const [mChecks,setMC]=useState({});
   const [wAuditNote,setWAN]=useState("");
   const [mAuditNote,setMAN]=useState("");
   const [inited,setInited]=useState(false);
@@ -1489,15 +1501,18 @@ function App(){
   const [activeTab,setActiveTab]=useState("hq");
   const [tasks,setTasks]=useState([]);
   const [projects,setProjects]=useState([]);
+  const [artists,setArtists]=useState([]);
   const [inited,setInited]=useState(false);
 
   useEffect(()=>{
     setTasks(store.get("tasks",[]));
     setProjects(store.get("projects",[]));
+    setArtists(store.get("artists",[]));
     setInited(true);
   },[]);
   useEffect(()=>{if(inited){store.set("tasks",tasks);}},[tasks,inited]);
   useEffect(()=>{if(inited){store.set("projects",projects);}},[projects,inited]);
+  useEffect(()=>{if(inited){store.set("artists",artists);}},[artists,inited]);
 
   const activeTabObj=TABS.find(t=>t.id===activeTab)||TABS[0];
 
@@ -1506,8 +1521,8 @@ function App(){
       case"hq":return<HQTab tasks={tasks} projects={projects} goToTab={setActiveTab}/>;
       case"tasks":return<TasksTab tasks={tasks} setTasks={setTasks} projects={projects} goToTab={setActiveTab}/>;
       case"projects":return<ProjectsTab projects={projects} setProjects={setProjects}/>;
+      case"artists":return<ArtistsTab artists={artists} setArtists={setArtists}/>;
       case"money":return<MoneyTab/>;
-      case"inventory":return<GalleryInventoryTab/>;
       case"reset":return<ResetTab/>;
       case"bizops":return<BizOpsTab/>;
       case"moodboard":return<MoodboardTab/>;
