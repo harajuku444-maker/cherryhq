@@ -39,6 +39,7 @@ const C={
   rose:"#F5C4D4",roseMed:"#D87898",
   lilac:"#DFC8F5",lilacMed:"#A870D8",lilacDeep:"#6830A0",
   teal:"#C0EAE4",tealMed:"#4FA89C",tealDeep:"#2E6E64",
+  gold:"#F0DDA0",goldMed:"#B8901E",goldDeep:"#7A5E10",
   charcoal:"#1A1A1A",gray:"#888",lgray:"#E8E8E8",
   cream:"#FDF8F5",white:"#fff",
 };
@@ -49,6 +50,7 @@ const TABS=[
   {id:"projects",emoji:"◈",label:"Projects",            color:C.lav,   dark:C.lavMed,  content:"#F4F0FF"},
   {id:"money",   emoji:"💸",label:"Money + Invoices",   color:C.peach, dark:C.peachMed,content:"#FFF6F0"},
   {id:"collectors",emoji:"🖼",label:"Collectors",       color:C.teal,  dark:C.tealMed, content:"#EFFBF9"},
+  {id:"artists", emoji:"🎨",label:"Artists",            color:C.gold,  dark:C.goldMed, content:"#FDF9EF"},
   {id:"reset",   emoji:"↻",label:"Reset Studio",        color:C.yellow,dark:C.yellowMed,content:"#FFFDF0"},
   {id:"bizops",  emoji:"⌘",label:"Biz Ops",             color:C.blue,  dark:C.blueMed, content:"#F0F6FF"},
   {id:"moodboard",emoji:"✿",label:"Moodboard",          color:C.rose,  dark:C.roseMed, content:"#FFF0F4"},
@@ -64,6 +66,8 @@ const RUNWAY_CATS=["Gallery","Public Art / Advisory","Social Media Content","C D
 const PROJ_TYPES=["Gallery","Public Art","Content","C DOT","Business Dev","Personal","Admin"];
 const COLLECTOR_STATUSES=["Lead","Active","VIP","Past Client","Cold"];
 const COLLECTOR_STATUS_COLORS={"Lead":C.yellow,"Active":C.mint,"VIP":C.pink,"Past Client":C.lav,"Cold":C.lgray};
+const ARTIST_STATUSES=["Represented","Prospect","Past Collaborator"];
+const ARTIST_STATUS_COLORS={"Represented":C.mint,"Prospect":C.yellow,"Past Collaborator":C.lgray};
 const PHONE="+12026993787";
 
 const STATUS_COLORS={
@@ -686,6 +690,129 @@ function CollectorsTab(){
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           <Btn outline color={C.gray} sm onClick={()=>setModal(false)}>Cancel</Btn>
           <Btn color={C.tealMed} onClick={save}>{editId?"Save Changes":"Add Collector"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  </div>;
+}
+
+// ── ARTISTS TAB ────────────────────────────────────────
+function ArtistsTab(){
+  const emptyForm={name:"",photo:"",email:"",phone:"",city:"",medium:"",status:"Prospect",bio:"",portfolio:"",notes:""};
+  const [artists,setArtists]=useState([]);
+  const [modal,setModal]=useState(false);
+  const [editId,setEditId]=useState(null);
+  const [filterStatus,setFilterStatus]=useState("");
+  const [search,setSearch]=useState("");
+  const [form,setForm]=useState(emptyForm);
+  const [uploading,setUploading]=useState(false);
+  const [inited,setInited]=useState(false);
+
+  useEffect(()=>{setArtists(store.get("artists",[]));setInited(true);},[]);
+  useEffect(()=>{if(inited){store.set("artists",artists);}},[artists,inited]);
+
+  const openNew=()=>{setForm(emptyForm);setEditId(null);setModal(true);};
+  const openEdit=a=>{setForm({...emptyForm,...a});setEditId(a.id);setModal(true);};
+  const save=()=>{
+    if(!form.name.trim())return;
+    if(editId)setArtists(as=>as.map(a=>a.id===editId?{...a,...form}:a));
+    else setArtists(as=>[{...form,id:uid(),added:todayStr()},...as]);
+    setModal(false);
+  };
+  const del=id=>setArtists(as=>as.filter(a=>a.id!==id));
+
+  const handlePhoto=async e=>{
+    const file=e.target.files&&e.target.files[0];
+    if(!file)return;
+    setUploading(true);
+    try{
+      const dataUrl=await resizeImage(file);
+      setForm(f=>({...f,photo:dataUrl}));
+    }catch(err){console.error(err);}
+    setUploading(false);
+  };
+
+  const filtered=artists.filter(a=>{
+    if(filterStatus&&a.status!==filterStatus)return false;
+    if(search){
+      const hay=`${a.name} ${a.city||""} ${a.medium||""} ${a.bio||""} ${a.notes||""}`.toLowerCase();
+      if(!hay.includes(search.toLowerCase()))return false;
+    }
+    return true;
+  });
+
+  const AvatarCircle=({photo,name,size=56})=>(
+    photo
+      ?<img src={photo} alt={name} style={{width:size,height:size,borderRadius:"50%",objectFit:"cover",border:`2px solid ${C.goldMed}`,flexShrink:0}}/>
+      :<div style={{width:size,height:size,borderRadius:"50%",background:C.gold,color:C.goldDeep,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,fontSize:size*0.36,border:`2px solid ${C.goldMed}`,flexShrink:0}}>{initials(name)}</div>
+  );
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
+      <SecTitle color={C.goldDeep}>Artists 🎨</SecTitle>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <Inp value={search} onChange={setSearch} placeholder="Search name, city, medium…" style={{width:220}}/>
+        <Sel value={filterStatus} onChange={setFilterStatus} options={[{v:"",l:"All Status"},...ARTIST_STATUSES]} style={{width:170}}/>
+        <Btn color={C.goldMed} onClick={openNew}>+ Add Artist</Btn>
+      </div>
+    </div>
+
+    <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
+      {ARTIST_STATUSES.map(s=>{const n=artists.filter(a=>a.status===s).length;return<div key={s} style={{background:ARTIST_STATUS_COLORS[s]||C.lgray,borderRadius:10,padding:"5px 12px",fontSize:12,fontWeight:700,color:C.charcoal}}>{s}: {n}</div>;})}
+    </div>
+
+    {filtered.length===0&&<div style={{padding:48,textAlign:"center",color:C.gray,fontStyle:"italic",fontSize:14}}>{artists.length===0?"No artists saved yet. Keep a running list for future shows and public art projects — add a photo of their work or face so you remember it later. 🎨":"No artists match your search/filter."}</div>}
+
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
+      {filtered.map(a=><Card key={a.id} style={{cursor:"pointer"}} onClick={()=>openEdit(a)}>
+        <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+          <AvatarCircle photo={a.photo} name={a.name}/>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:6}}>
+              <div style={{fontWeight:700,fontSize:16,color:C.charcoal,lineHeight:1.25}}>{a.name}</div>
+              <button onClick={e=>{e.stopPropagation();del(a.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#ddd",fontSize:16,flexShrink:0}}>×</button>
+            </div>
+            <div style={{marginTop:4}}><StatusTag status={a.status} colors={ARTIST_STATUS_COLORS}/></div>
+            {a.city&&<div style={{fontSize:12,color:C.gray,marginTop:6}}>{a.city}</div>}
+          </div>
+        </div>
+        {a.medium&&<div style={{fontSize:12,color:C.charcoal,marginTop:12,lineHeight:1.5}}><strong style={{color:C.goldDeep}}>Medium:</strong> {a.medium}</div>}
+        {a.bio&&<div style={{fontSize:12,color:"#666",marginTop:6,lineHeight:1.5}}>{a.bio.slice(0,140)}{a.bio.length>140?"…":""}</div>}
+        <div style={{display:"flex",gap:12,marginTop:10,flexWrap:"wrap"}}>
+          {a.email&&<span style={{fontSize:11,color:C.goldMed,fontWeight:600}}>{a.email}</span>}
+          {a.phone&&<span style={{fontSize:11,color:C.goldMed,fontWeight:600}}>{a.phone}</span>}
+        </div>
+        {a.portfolio&&<a href={a.portfolio} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{display:"inline-block",marginTop:8,fontSize:11,fontWeight:700,color:C.goldDeep}}>Portfolio →</a>}
+      </Card>)}
+    </div>
+
+    <Modal open={modal} onClose={()=>setModal(false)} title={editId?"Edit Artist":"New Artist"} color={C.goldMed}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{display:"flex",gap:16,alignItems:"center"}}>
+          <AvatarCircle photo={form.photo} name={form.name} size={72}/>
+          <div style={{flex:1}}>
+            <Lbl>Photo</Lbl>
+            <input type="file" accept="image/*" onChange={handlePhoto} style={{fontSize:12}}/>
+            {uploading&&<div style={{fontSize:11,color:C.gray,marginTop:4}}>Processing photo…</div>}
+            {form.photo&&<button onClick={()=>setForm(f=>({...f,photo:""}))} style={{marginTop:6,background:"none",border:"none",cursor:"pointer",color:C.roseMed,fontSize:11,fontWeight:700,padding:0}}>Remove photo</button>}
+          </div>
+        </div>
+        <div><Lbl>Name</Lbl><Inp value={form.name} onChange={v=>setForm({...form,name:v})} placeholder="Artist's name"/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><Lbl>Email</Lbl><Inp value={form.email} onChange={v=>setForm({...form,email:v})} placeholder="email@example.com"/></div>
+          <div><Lbl>Phone</Lbl><Inp value={form.phone} onChange={v=>setForm({...form,phone:v})} placeholder="(202) 555-0100"/></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><Lbl>City</Lbl><Inp value={form.city} onChange={v=>setForm({...form,city:v})} placeholder="e.g. Washington, DC"/></div>
+          <div><Lbl>Status</Lbl><Sel value={form.status} onChange={v=>setForm({...form,status:v})} options={ARTIST_STATUSES}/></div>
+        </div>
+        <div><Lbl>Medium(s)</Lbl><Inp value={form.medium} onChange={v=>setForm({...form,medium:v})} placeholder="e.g. sculpture, mural, mixed media"/></div>
+        <div><Lbl>Bio / Background</Lbl><Txta value={form.bio} onChange={v=>setForm({...form,bio:v})} rows={3} placeholder="Who they are, what they make, style, notable work…"/></div>
+        <div><Lbl>Portfolio / Website</Lbl><Inp value={form.portfolio} onChange={v=>setForm({...form,portfolio:v})} placeholder="https://…"/></div>
+        <div><Lbl>Notes — Show/Public Art Fit</Lbl><Txta value={form.notes} onChange={v=>setForm({...form,notes:v})} rows={3} placeholder="Fit for upcoming shows or public art projects, scale capability, past exhibitions, follow-up plans…"/></div>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <Btn outline color={C.gray} sm onClick={()=>setModal(false)}>Cancel</Btn>
+          <Btn color={C.goldMed} onClick={save}>{editId?"Save Changes":"Add Artist"}</Btn>
         </div>
       </div>
     </Modal>
@@ -1543,6 +1670,7 @@ function App(){
       case"projects":return<ProjectsTab projects={projects} setProjects={setProjects}/>;
       case"money":return<MoneyTab/>;
       case"collectors":return<CollectorsTab/>;
+      case"artists":return<ArtistsTab/>;
       case"reset":return<ResetTab/>;
       case"bizops":return<BizOpsTab/>;
       case"moodboard":return<MoodboardTab/>;
