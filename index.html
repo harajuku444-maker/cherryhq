@@ -1647,6 +1647,99 @@ function ContentTab(){
 }
 
 // ── MAIN APP ──────────────────────────────────────────
+// ── BACKUP / RESTORE ──────────────────────────────────
+const BACKUP_PREFIX="chelahq_";
+const LAST_BACKUP_KEY="chelahqmeta_lastBackup";
+const getLastBackup=()=>{try{return localStorage.getItem(LAST_BACKUP_KEY);}catch{return null;}};
+const daysSince=iso=>iso?Math.floor((Date.now()-new Date(iso).getTime())/86400000):null;
+
+function exportBackup(){
+  const data={};
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    if(k&&k.startsWith(BACKUP_PREFIX))data[k.slice(BACKUP_PREFIX.length)]=localStorage.getItem(k);
+  }
+  const payload={app:"chela-hq",version:1,exportedAt:new Date().toISOString(),data};
+  const blob=new Blob([JSON.stringify(payload)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=`chela-hq-backup-${todayStr()}.json`;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+  try{localStorage.setItem(LAST_BACKUP_KEY,payload.exportedAt);}catch{}
+  return Object.keys(data).length;
+}
+
+function importBackup(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      try{
+        const payload=JSON.parse(e.target.result);
+        if(!payload||payload.app!=="chela-hq"||typeof payload.data!=="object")throw new Error("This file isn't a Chela HQ backup.");
+        const keys=Object.keys(payload.data);
+        const when=payload.exportedAt?new Date(payload.exportedAt).toLocaleString("en-US",{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"}):"an unknown date";
+        if(!window.confirm(`Restore backup from ${when}?\n\nThis replaces everything currently in Chela HQ on this device (${keys.length} sections). Tip: export a backup of this device first if you're not sure.`)){resolve(false);return;}
+        const toRemove=[];
+        for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith(BACKUP_PREFIX))toRemove.push(k);}
+        toRemove.forEach(k=>localStorage.removeItem(k));
+        keys.forEach(k=>{const v=payload.data[k];localStorage.setItem(BACKUP_PREFIX+k,typeof v==="string"?v:JSON.stringify(v));});
+        resolve(true);
+      }catch(err){reject(err);}
+    };
+    reader.onerror=()=>reject(new Error("Couldn't read that file."));
+    reader.readAsText(file);
+  });
+}
+
+function BackupMenu(){
+  const [open,setOpen]=useState(false);
+  const [last,setLast]=useState(getLastBackup());
+  const [msg,setMsg]=useState("");
+  const fileRef=useRef(null);
+  const wrapRef=useRef(null);
+  const age=daysSince(last);
+  const stale=age===null||age>=7;
+
+  useEffect(()=>{
+    if(!open)return;
+    const close=e=>{if(wrapRef.current&&!wrapRef.current.contains(e.target))setOpen(false);};
+    document.addEventListener("mousedown",close);document.addEventListener("touchstart",close);
+    return()=>{document.removeEventListener("mousedown",close);document.removeEventListener("touchstart",close);};
+  },[open]);
+
+  const doExport=()=>{
+    try{const n=exportBackup();setLast(getLastBackup());setMsg(`Saved ${n} sections to your downloads.`);}
+    catch(e){setMsg("Export failed: "+e.message);}
+  };
+  const doImport=async e=>{
+    const f=e.target.files&&e.target.files[0];
+    e.target.value="";
+    if(!f)return;
+    try{const ok=await importBackup(f);if(ok){setMsg("Restored. Reloading…");setTimeout(()=>window.location.reload(),600);}}
+    catch(err){setMsg(err.message||"That file couldn't be restored.");}
+  };
+
+  const btn={display:"block",width:"100%",textAlign:"left",background:C.white,border:`1.5px solid ${C.lgray}`,borderRadius:10,padding:"10px 12px",cursor:"pointer",fontSize:13,fontWeight:600,color:C.charcoal,marginBottom:8};
+  const lastLabel=last?(age===0?"today":age===1?"yesterday":`${age} days ago`):"never";
+
+  return <div ref={wrapRef} style={{position:"relative"}}>
+    <button onClick={()=>{setOpen(o=>!o);setMsg("");}} title="Back up or restore your data" style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:10,padding:"7px 12px",color:C.pinkMed,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,fontSize:12,letterSpacing:"0.08em",textTransform:"uppercase",cursor:"pointer",position:"relative"}}>
+      Backup
+      {stale&&<span style={{position:"absolute",top:-3,right:-3,width:9,height:9,borderRadius:"50%",background:C.roseMed,border:`2px solid ${C.charcoal}`}}/>}
+    </button>
+    {open&&<div style={{position:"absolute",right:0,top:"calc(100% + 8px)",width:260,background:C.cream,border:`2px solid ${C.charcoal}`,borderRadius:14,padding:14,boxShadow:"0 12px 40px rgba(0,0,0,0.25)",zIndex:200}}>
+      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:16,textTransform:"uppercase",color:C.charcoal,marginBottom:2}}>Your Data</div>
+      <div style={{fontSize:11,color:stale?C.pinkDeep:C.gray,marginBottom:12}}>Last backup: {lastLabel}{stale?" · time for a fresh one":""}</div>
+      <button style={btn} onClick={doExport}>⬇ Export backup<div style={{fontSize:11,fontWeight:400,color:C.gray,marginTop:2}}>Download everything as one file</div></button>
+      <button style={btn} onClick={()=>fileRef.current&&fileRef.current.click()}>⬆ Restore from file<div style={{fontSize:11,fontWeight:400,color:C.gray,marginTop:2}}>Load a backup onto this device</div></button>
+      <input ref={fileRef} type="file" accept="application/json,.json" style={{display:"none"}} onChange={doImport}/>
+      <div style={{fontSize:10.5,color:C.gray,lineHeight:1.4}}>Your data lives in this browser only. To move it to your phone, export here, then restore the file there.</div>
+      {msg&&<div style={{marginTop:10,fontSize:12,fontWeight:600,color:C.mintDeep}}>{msg}</div>}
+    </div>}
+  </div>;
+}
+
 function App(){
   const [activeTab,setActiveTab]=useState("hq");
   const [tasks,setTasks]=useState([]);
@@ -1682,14 +1775,15 @@ function App(){
 
   return <div style={{minHeight:"100vh",background:`radial-gradient(ellipse at top left,${C.pink}55 0%,${C.lav}33 40%,${C.cream} 80%)`,backgroundAttachment:"fixed"}}>
     {/* Header */}
-    <div style={{background:`linear-gradient(135deg,${C.charcoal} 0%,#2A1A2A 100%)`,padding:"14px 28px",display:"flex",alignItems:"center",justifyContent:"space-between",boxShadow:"0 2px 20px rgba(0,0,0,0.2)",position:"sticky",top:0,zIndex:100}}>
+    <div style={{background:`linear-gradient(135deg,${C.charcoal} 0%,#2A1A2A 100%)`,padding:"14px clamp(16px,4vw,28px)",display:"flex",flexWrap:"wrap",rowGap:10,columnGap:14,alignItems:"center",justifyContent:"space-between",boxShadow:"0 2px 20px rgba(0,0,0,0.2)",position:"sticky",top:0,zIndex:100}}>
       <div style={{display:"flex",alignItems:"center",gap:14}}>
         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:26,textTransform:"uppercase",letterSpacing:"-0.01em",color:C.pinkMed,lineHeight:1}}>CHELA HQ.</div>
         <div style={{width:1,height:24,background:"rgba(255,255,255,0.1)"}}/>
         <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",letterSpacing:"0.08em",textTransform:"uppercase",fontWeight:500}}>{new Date().toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</div>
       </div>
-      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+      <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginLeft:"auto"}}>
         {[{n:tasks.filter(t=>t.status==="In Progress").length,l:"Active",c:C.yellow},{n:tasks.filter(t=>t.finishBy===todayStr()&&t.status!=="Done").length,l:"Due Today",c:C.rose},{n:projects.filter(p=>p.status==="Active").length,l:"Projects",c:C.mint}].map(({n,l,c})=><div key={l} style={{background:"rgba(255,255,255,0.06)",borderRadius:10,padding:"5px 12px",textAlign:"center"}}><div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:18,color:c,lineHeight:1}}>{n}</div><div style={{fontSize:9,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.1em"}}>{l}</div></div>)}
+        <BackupMenu/>
       </div>
     </div>
 
