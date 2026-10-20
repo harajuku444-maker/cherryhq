@@ -10,6 +10,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.89.0/dist/umd/supabase.js"></script>
 <style>
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
 html{scroll-behavior:smooth;}
@@ -68,7 +69,6 @@ const COLLECTOR_STATUSES=["Lead","Active","VIP","Past Client","Cold"];
 const COLLECTOR_STATUS_COLORS={"Lead":C.yellow,"Active":C.mint,"VIP":C.pink,"Past Client":C.lav,"Cold":C.lgray};
 const ARTIST_STATUSES=["Represented","Prospect","Past Collaborator"];
 const ARTIST_STATUS_COLORS={"Represented":C.mint,"Prospect":C.yellow,"Past Collaborator":C.lgray};
-const PHONE="+12026993787";
 
 const STATUS_COLORS={
   "Not Started":C.lgray,"In Progress":C.yellow,"Done":C.mint,"Blocked":"#FFBBBB",
@@ -88,18 +88,133 @@ const DEFAULT_AFFIRMATIONS=[
   "Rest is productive. Joy is strategy.",
 ];
 
-// ── STORAGE (localStorage) ────────────────────────────
+// ── STORAGE (localStorage, synced to Supabase) ────────
+const P="chelahq_",META="chelahqmeta_";
+const SUPABASE_URL="https://eyjlrmbnfvdcnbzplisk.supabase.co";
+const SUPABASE_KEY="sb_publishable_2CpQGho0NicBRDkmGIQzKw_oMmstcK-"; // public key; access is locked per-user by row level security
+const tsKey=k=>META+"ts_"+k;
+const lsGet=k=>{try{return localStorage.getItem(k);}catch{return null;}};
+const lsSet=(k,v)=>{try{localStorage.setItem(k,v);return true;}catch(e){console.error(e);return false;}};
+const appKeys=()=>{const out=[];try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith(P))out.push(k.slice(P.length));}}catch{}return out;};
+
 const store={
-  get(key,def=null){try{const v=localStorage.getItem("chelahq_"+key);return v!==null?JSON.parse(v):def;}catch{return def;}},
-  set(key,val){try{localStorage.setItem("chelahq_"+key,JSON.stringify(val));}catch(e){console.error(e);}},
+  get(key,def=null){try{const v=localStorage.getItem(P+key);return v!==null?JSON.parse(v):def;}catch{return def;}},
+  set(key,val){const s=JSON.stringify(val);if(lsGet(P+key)===s)return;if(lsSet(P+key,s)){lsSet(tsKey(key),String(Date.now()));Sync.markDirty(key);}},
 };
+
+// Safety copy of a device's data, taken right before its first sync replaces anything
+const Safety={
+  db(){return new Promise((res,rej)=>{const r=indexedDB.open("chelahq-safety",1);r.onupgradeneeded=()=>r.result.createObjectStore("snap");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});},
+  async run(mode,val){const db=await this.db();return new Promise((res,rej)=>{const tx=db.transaction("snap",mode==="get"?"readonly":"readwrite");const st=tx.objectStore("snap");const rq=mode==="get"?st.get("presync"):mode==="put"?st.put(val,"presync"):st.delete("presync");tx.oncomplete=()=>res(rq.result);tx.onerror=()=>rej(tx.error);});},
+  save(data){return this.run("put",{savedAt:new Date().toISOString(),data});},
+  load(){return this.run("get").catch(()=>null);},
+  clear(){return this.run("delete").catch(()=>{});},
+};
+
+const Sync={
+  client:null,user:null,state:"signedout",lastSync:null,error:"",dirty:new Set(),timer:null,subs:new Set(),busy:false,rendered:false,
+  on(f){this.subs.add(f);return()=>this.subs.delete(f);},
+  set(patch){Object.assign(this,patch);this.subs.forEach(f=>{try{f();}catch{}});},
+  onceKey(){return META+"synced_"+(this.user&&this.user.id);},
+  friendly(e){const m=(e&&e.message)||String(e);return /fetch|network|load failed/i.test(m)?"can't reach the internet right now":m;},
+  fail(e){console.error("[sync]",e);this.set({state:"error",error:this.friendly(e)});},
+  typing(){const a=document.activeElement;return !!(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));},
+  async init(){
+    if(!window.supabase||!window.supabase.createClient){this.set({state:"unavailable"});return;}
+    this.client=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,flowType:"implicit"}});
+    this.client.auth.onAuthStateChange((evt,session)=>{
+      const prev=this.user&&this.user.id,next=session&&session.user&&session.user.id;
+      if(next&&next!==prev){this.user=session.user;setTimeout(()=>this.afterSignIn(),0);}
+      else if(!next&&prev&&evt==="SIGNED_OUT"){this.user=null;this.set({state:"signedout",lastSync:null});}
+    });
+    document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")this.refresh();else this.flush();});
+    window.addEventListener("online",()=>this.refresh());
+    window.addEventListener("pagehide",()=>{this.flush();});
+    const {data}=await this.client.auth.getSession();
+    const session=data&&data.session;
+    if(session&&!this.user){this.user=session.user;await this.afterSignIn();}
+    else if(!session)this.set({state:"signedout"});
+  },
+  async afterSignIn(){
+    if(this.busy)return;
+    this.set({state:"syncing",error:""});
+    try{const changed=await this.pull();if(changed&&this.rendered)this.reload();}catch(e){this.fail(e);}
+  },
+  async reload(){try{await this.flush();}finally{window.location.reload();}},
+  async refresh(){
+    if(!this.user||this.busy||this.typing())return;
+    this.set({state:"syncing"});
+    try{const changed=await this.pull();if(changed)this.reload();}catch(e){this.fail(e);}
+  },
+  async syncNow(){if(!this.user||this.busy)return;this.set({state:"syncing"});try{const changed=await this.pull();if(changed)this.reload();}catch(e){this.fail(e);}},
+  // Two-way merge: for each section, the most recently edited copy wins.
+  // A device's very first sync takes the online copy (after saving a safety copy locally).
+  async pull(){
+    if(!this.client||!this.user)return false;
+    this.busy=true;
+    try{
+      const {data,error}=await this.client.from("hq_data").select("key,value,updated_at");
+      if(error)throw error;
+      const first=!lsGet(this.onceKey());
+      const remote=new Map((data||[]).map(r=>[r.key,r]));
+      const incoming=[];
+      for(const r of remote.values()){
+        const lt=Number(lsGet(tsKey(r.key))||0),rt=Date.parse(r.updated_at)||0;
+        if(first||rt>lt){
+          if(r.value!==null&&lsGet(P+r.key)!==r.value)incoming.push(r);
+          else lsSet(tsKey(r.key),String(rt));
+        }
+      }
+      if(first&&incoming.length&&incoming.some(r=>lsGet(P+r.key)!==null)){
+        const snap={};appKeys().forEach(k=>{snap[k]=lsGet(P+k);});
+        try{await Safety.save(snap);}catch(e){console.warn("[sync] safety copy failed",e);}
+      }
+      for(const r of incoming){lsSet(P+r.key,r.value);lsSet(tsKey(r.key),String(Date.parse(r.updated_at)||Date.now()));}
+      const inc=new Set(incoming.map(r=>r.key));
+      const outgoing=appKeys().filter(k=>{if(inc.has(k))return false;const r=remote.get(k);if(!r)return true;if(first)return false;return Number(lsGet(tsKey(k))||0)>(Date.parse(r.updated_at)||0);});
+      this.dirty.forEach(k=>{if(!inc.has(k)&&!outgoing.includes(k))outgoing.push(k);});
+      this.dirty.clear();
+      await this.pushKeys(outgoing);
+      lsSet(this.onceKey(),"1");
+      this.set({state:"synced",lastSync:Date.now(),error:""});
+      return incoming.length>0;
+    }finally{this.busy=false;}
+  },
+  async pushKeys(keys){
+    if(!keys.length||!this.client||!this.user)return;
+    const rows=[];
+    for(const k of keys){
+      const v=lsGet(P+k);if(v===null)continue;
+      let t=Number(lsGet(tsKey(k))||0);if(!t){t=Date.now();lsSet(tsKey(k),String(t));}
+      rows.push({user_id:this.user.id,key:k,value:v,updated_at:new Date(t).toISOString()});
+    }
+    for(let i=0;i<rows.length;i+=8){
+      const {error}=await this.client.from("hq_data").upsert(rows.slice(i,i+8),{onConflict:"user_id,key"});
+      if(error)throw error;
+    }
+  },
+  markDirty(k){this.dirty.add(k);if(!this.user)return;clearTimeout(this.timer);this.timer=setTimeout(()=>this.flush(),1500);},
+  async flush(){
+    clearTimeout(this.timer);
+    if(!this.user||!this.dirty.size||this.busy)return;
+    const keys=[...this.dirty];this.dirty.clear();
+    try{this.set({state:"syncing"});await this.pushKeys(keys);this.set({state:"synced",lastSync:Date.now(),error:""});}
+    catch(e){keys.forEach(k=>this.dirty.add(k));this.fail(e);}
+  },
+  async sendLink(email){const {error}=await this.client.auth.signInWithOtp({email,options:{emailRedirectTo:window.location.origin+window.location.pathname}});if(error)throw error;},
+  async verifyCode(email,code){const {error}=await this.client.auth.verifyOtp({email,token:code,type:"email"});if(error)throw error;},
+  async signOut(){try{await this.flush();}catch{}await this.client.auth.signOut();this.user=null;this.set({state:"signedout",lastSync:null});},
+};
+function useSync(){const [,tick]=useState(0);useEffect(()=>Sync.on(()=>tick(x=>x+1)),[]);return Sync;}
+const ago=t=>{if(!t)return"";const s=Math.round((Date.now()-t)/1000);if(s<45)return"just now";const m=Math.round(s/60);if(m<60)return`${m} min ago`;const h=Math.round(m/60);if(h<24)return`${h} hr ago`;return`${Math.round(h/24)} days ago`;};
 
 // ── UTILS ─────────────────────────────────────────────
 const uid=()=>Math.random().toString(36).slice(2,9);
 const todayStr=()=>new Date().toISOString().slice(0,10);
 const fmtDate=d=>{if(!d)return"—";const dt=new Date(d+"T12:00:00");return isNaN(dt)?d:dt.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});};
 const fmtMoney=n=>"$"+Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
-const openSMS=body=>{window.location.href=`sms:${PHONE}?body=${encodeURIComponent(body)}`;};
+const getPhone=()=>store.get("settings_phone","");
+const openSMS=body=>{let ph=getPhone();if(!ph){ph=(window.prompt("What number should these texts go to? (Saved privately to your account, not in the public code.)","")||"").trim();if(!ph)return;store.set("settings_phone",ph);}window.location.href=`sms:${ph}?body=${encodeURIComponent(body)}`;};
 const weekLabel=()=>{const d=new Date();const s=new Date(d);s.setDate(d.getDate()-d.getDay());const e=new Date(s);e.setDate(s.getDate()+6);return`${s.toLocaleDateString("en-US",{month:"short",day:"numeric"})} – ${e.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;};
 const getDayAff=list=>list&&list.length?list[new Date().getDay()%list.length]:"";
 const initials=name=>(name||"").trim().split(/\s+/).slice(0,2).map(w=>w[0]?.toUpperCase()||"").join("")||"?";
@@ -319,7 +434,7 @@ function HQTab({tasks,projects,goToTab}){
 
     {/* Briefing */}
     <Card color={C.charcoal}>
-      <SecTitle color={C.pinkMed} style={{marginBottom:12}}>Daily Briefing Text <span style={{fontSize:12,fontWeight:400,color:"rgba(255,255,255,0.4)",textTransform:"none",letterSpacing:0,fontFamily:"inherit"}}>→ {PHONE}</span></SecTitle>
+      <SecTitle color={C.pinkMed} style={{marginBottom:12}}>Daily Briefing Text <span style={{fontSize:12,fontWeight:400,color:"rgba(255,255,255,0.4)",textTransform:"none",letterSpacing:0,fontFamily:"inherit"}}>→ {getPhone()||"your number (asked on first send)"}</span></SecTitle>
       <div style={{background:"rgba(255,255,255,0.06)",borderRadius:10,padding:16,marginBottom:14,fontFamily:"monospace",fontSize:12,color:"rgba(255,255,255,0.8)",lineHeight:1.7,whiteSpace:"pre-wrap"}}>{briefingText()}</div>
       <Btn color={C.pinkMed} onClick={()=>openSMS(briefingText())}>📱 Open in Messages</Btn>
     </Card>
@@ -1683,7 +1798,8 @@ function importBackup(file){
         const toRemove=[];
         for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith(BACKUP_PREFIX))toRemove.push(k);}
         toRemove.forEach(k=>localStorage.removeItem(k));
-        keys.forEach(k=>{const v=payload.data[k];localStorage.setItem(BACKUP_PREFIX+k,typeof v==="string"?v:JSON.stringify(v));});
+        const now=String(Date.now());
+        keys.forEach(k=>{const v=payload.data[k];localStorage.setItem(BACKUP_PREFIX+k,typeof v==="string"?v:JSON.stringify(v));localStorage.setItem(tsKey(k),now);});
         resolve(true);
       }catch(err){reject(err);}
     };
@@ -1692,10 +1808,54 @@ function importBackup(file){
   });
 }
 
+function SyncPanel(){
+  const sync=useSync();
+  const [email,setEmail]=useState(()=>lsGet(META+"email")||"");
+  const [sent,setSent]=useState(false);
+  const [code,setCode]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [note,setNote]=useState("");
+  const inp={width:"100%",boxSizing:"border-box",border:`1.5px solid ${C.lgray}`,borderRadius:10,padding:"9px 11px",fontSize:14,marginBottom:8,background:C.white};
+  const primary={width:"100%",background:C.charcoal,color:C.pinkMed,border:"none",borderRadius:10,padding:"10px 12px",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8,opacity:busy?0.6:1};
+  const link={background:"none",border:"none",padding:0,color:C.lavDeep,fontSize:12,fontWeight:600,cursor:"pointer",textDecoration:"underline"};
+  const run=async fn=>{setBusy(true);setNote("");try{await fn();}catch(e){const f=Sync.friendly(e);setNote(f[0].toUpperCase()+f.slice(1)+".");}finally{setBusy(false);}};
+
+  if(sync.state==="unavailable")return <div style={{fontSize:12,color:C.gray,lineHeight:1.45}}>Sync couldn't load right now (check your connection). Everything is still saved on this device.</div>;
+
+  if(!sync.user){
+    if(!sent)return <div>
+      <div style={{fontSize:12,color:C.charcoal,lineHeight:1.45,marginBottom:10}}>Sign in to keep Chela HQ in sync across your phone and laptop.</div>
+      <input style={inp} type="email" inputMode="email" autoComplete="email" placeholder="you@email.com" value={email} onChange={e=>setEmail(e.target.value)}/>
+      <button style={primary} disabled={busy||!/\S+@\S+\.\S+/.test(email)} onClick={()=>run(async()=>{const e=email.trim();lsSet(META+"email",e);await Sync.sendLink(e);setSent(true);})}>{busy?"Sending…":"Email me a sign-in link"}</button>
+      {note&&<div style={{fontSize:12,color:C.pinkDeep,fontWeight:600}}>{note}</div>}
+    </div>;
+    return <div>
+      <div style={{fontSize:12,color:C.charcoal,lineHeight:1.45,marginBottom:10}}>Check <b>{email}</b>. Tap the link in the email, or if it shows a code, enter it here:</div>
+      <input style={{...inp,letterSpacing:"0.3em",textAlign:"center",fontWeight:700}} inputMode="numeric" autoComplete="one-time-code" placeholder="code" value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,""))}/>
+      <button style={primary} disabled={busy||code.length<6} onClick={()=>run(()=>Sync.verifyCode(email.trim(),code))}>{busy?"Checking…":"Sign in with code"}</button>
+      {note&&<div style={{fontSize:12,color:C.pinkDeep,fontWeight:600,marginBottom:6}}>{note}</div>}
+      <button style={link} onClick={()=>{setSent(false);setCode("");setNote("");}}>Use a different email or resend</button>
+    </div>;
+  }
+
+  const status=sync.state==="syncing"?"Syncing…":sync.state==="error"?"Couldn't sync: "+sync.error:`Synced ${ago(sync.lastSync)}`;
+  return <div>
+    <div style={{fontSize:12,color:C.gray,marginBottom:2}}>Signed in as</div>
+    <div style={{fontSize:13,fontWeight:700,color:C.charcoal,marginBottom:6,wordBreak:"break-all"}}>{sync.user.email}</div>
+    <div style={{fontSize:12,fontWeight:600,color:sync.state==="error"?C.pinkDeep:C.mintDeep,marginBottom:10}}>{status}</div>
+    <div style={{display:"flex",gap:8}}>
+      <button style={{...primary,marginBottom:0}} disabled={sync.state==="syncing"} onClick={()=>Sync.syncNow()}>Sync now</button>
+      <button style={{...primary,marginBottom:0,background:C.white,color:C.charcoal,border:`1.5px solid ${C.lgray}`}} onClick={()=>{if(window.confirm("Sign out of sync on this device? Your data stays here; it just stops syncing."))Sync.signOut();}}>Sign out</button>
+    </div>
+  </div>;
+}
+
 function BackupMenu(){
+  const sync=useSync();
   const [open,setOpen]=useState(false);
   const [last,setLast]=useState(getLastBackup());
   const [msg,setMsg]=useState("");
+  const [safety,setSafety]=useState(null);
   const fileRef=useRef(null);
   const wrapRef=useRef(null);
   const age=daysSince(last);
@@ -1703,6 +1863,7 @@ function BackupMenu(){
 
   useEffect(()=>{
     if(!open)return;
+    Safety.load().then(s=>setSafety(s||null));
     const close=e=>{if(wrapRef.current&&!wrapRef.current.contains(e.target))setOpen(false);};
     document.addEventListener("mousedown",close);document.addEventListener("touchstart",close);
     return()=>{document.removeEventListener("mousedown",close);document.removeEventListener("touchstart",close);};
@@ -1719,22 +1880,35 @@ function BackupMenu(){
     try{const ok=await importBackup(f);if(ok){setMsg("Restored. Reloading…");setTimeout(()=>window.location.reload(),600);}}
     catch(err){setMsg(err.message||"That file couldn't be restored.");}
   };
+  const undoFirstSync=()=>{
+    if(!safety)return;
+    const when=new Date(safety.savedAt).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
+    if(!window.confirm(`Bring back what this device had before its first sync (${when})?\n\nThat version will replace what's here now and sync to your other devices.`))return;
+    const now=String(Date.now());
+    Object.entries(safety.data).forEach(([k,v])=>{if(v!==null){lsSet(P+k,v);lsSet(tsKey(k),now);}});
+    Safety.clear().finally(()=>window.location.reload());
+  };
 
   const btn={display:"block",width:"100%",textAlign:"left",background:C.white,border:`1.5px solid ${C.lgray}`,borderRadius:10,padding:"10px 12px",cursor:"pointer",fontSize:13,fontWeight:600,color:C.charcoal,marginBottom:8};
   const lastLabel=last?(age===0?"today":age===1?"yesterday":`${age} days ago`):"never";
+  const head={fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:15,textTransform:"uppercase",color:C.charcoal,letterSpacing:"0.02em"};
+  const dot=sync.user?(sync.state==="error"?C.roseMed:sync.state==="syncing"?C.yellowMed:C.mintMed):C.roseMed;
 
   return <div ref={wrapRef} style={{position:"relative"}}>
-    <button onClick={()=>{setOpen(o=>!o);setMsg("");}} title="Back up or restore your data" style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:10,padding:"7px 12px",color:C.pinkMed,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,fontSize:12,letterSpacing:"0.08em",textTransform:"uppercase",cursor:"pointer",position:"relative"}}>
-      Backup
-      {stale&&<span style={{position:"absolute",top:-3,right:-3,width:9,height:9,borderRadius:"50%",background:C.roseMed,border:`2px solid ${C.charcoal}`}}/>}
+    <button onClick={()=>{setOpen(o=>!o);setMsg("");}} title="Sync and backup" style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:10,padding:"7px 12px 7px 24px",color:C.pinkMed,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,fontSize:12,letterSpacing:"0.08em",textTransform:"uppercase",cursor:"pointer",position:"relative"}}>
+      <span style={{position:"absolute",left:10,top:"50%",marginTop:-4,width:8,height:8,borderRadius:"50%",background:dot}}/>
+      Sync
     </button>
-    {open&&<div style={{position:"absolute",right:0,top:"calc(100% + 8px)",width:260,background:C.cream,border:`2px solid ${C.charcoal}`,borderRadius:14,padding:14,boxShadow:"0 12px 40px rgba(0,0,0,0.25)",zIndex:200}}>
-      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:16,textTransform:"uppercase",color:C.charcoal,marginBottom:2}}>Your Data</div>
-      <div style={{fontSize:11,color:stale?C.pinkDeep:C.gray,marginBottom:12}}>Last backup: {lastLabel}{stale?" · time for a fresh one":""}</div>
+    {open&&<div style={{position:"absolute",right:0,top:"calc(100% + 8px)",width:"min(290px, calc(100vw - 32px))",maxHeight:"calc(100vh - 90px)",overflowY:"auto",boxSizing:"border-box",background:C.cream,border:`2px solid ${C.charcoal}`,borderRadius:14,padding:14,boxShadow:"0 12px 40px rgba(0,0,0,0.25)",zIndex:200}}>
+      <div style={{...head,marginBottom:8}}>Sync</div>
+      <SyncPanel/>
+      <div style={{height:1,background:C.lgray,margin:"14px 0 12px"}}/>
+      <div style={head}>Backup file</div>
+      <div style={{fontSize:11,color:!sync.user&&stale?C.pinkDeep:C.gray,marginBottom:10}}>Last export: {lastLabel}{sync.user?" · your data is also saved online":stale?" · time for a fresh one":""}</div>
       <button style={btn} onClick={doExport}>⬇ Export backup<div style={{fontSize:11,fontWeight:400,color:C.gray,marginTop:2}}>Download everything as one file</div></button>
       <button style={btn} onClick={()=>fileRef.current&&fileRef.current.click()}>⬆ Restore from file<div style={{fontSize:11,fontWeight:400,color:C.gray,marginTop:2}}>Load a backup onto this device</div></button>
       <input ref={fileRef} type="file" accept="application/json,.json" style={{display:"none"}} onChange={doImport}/>
-      <div style={{fontSize:10.5,color:C.gray,lineHeight:1.4}}>Your data lives in this browser only. To move it to your phone, export here, then restore the file there.</div>
+      {safety&&<button style={{background:"none",border:"none",padding:0,color:C.lavDeep,fontSize:12,fontWeight:600,cursor:"pointer",textDecoration:"underline",textAlign:"left"}} onClick={undoFirstSync}>Undo first sync on this device</button>}
       {msg&&<div style={{marginTop:10,fontSize:12,fontWeight:600,color:C.mintDeep}}>{msg}</div>}
     </div>}
   </div>;
@@ -1807,7 +1981,11 @@ function App(){
   </div>;
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+(async()=>{
+  try{await Promise.race([Sync.init().catch(e=>Sync.fail(e)),new Promise(r=>setTimeout(r,8000))]);}catch(e){console.error(e);}
+  Sync.rendered=true;
+  ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+})();
 </script>
 </body>
 </html>
