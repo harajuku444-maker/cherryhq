@@ -202,6 +202,8 @@ const Sync={
     catch(e){keys.forEach(k=>this.dirty.add(k));this.fail(e);}
   },
   async sendLink(email){const {error}=await this.client.auth.signInWithOtp({email,options:{emailRedirectTo:window.location.origin+window.location.pathname}});if(error)throw error;},
+  async signInPassword(email,password){const {error}=await this.client.auth.signInWithPassword({email,password});if(error){if(/invalid login/i.test(error.message))throw new Error("wrong email or password. If you haven't set a password yet, sign in with the email link on your laptop first, then set one there");throw error;}},
+  async setPassword(password){const {error}=await this.client.auth.updateUser({password});if(error)throw error;lsSet(META+"haspw","1");},
   async verifyCode(email,code){const {error}=await this.client.auth.verifyOtp({email,token:code,type:"email"});if(error)throw error;},
   async signOut(){try{await this.flush();}catch{}await this.client.auth.signOut();this.user=null;this.set({state:"signedout",lastSync:null});},
 };
@@ -1811,42 +1813,67 @@ function importBackup(file){
 function SyncPanel(){
   const sync=useSync();
   const [email,setEmail]=useState(()=>lsGet(META+"email")||"");
+  const [mode,setMode]=useState("link");
   const [sent,setSent]=useState(false);
-  const [code,setCode]=useState("");
+  const [pw,setPw]=useState("");
+  const [showPwForm,setShowPwForm]=useState(false);
   const [busy,setBusy]=useState(false);
   const [note,setNote]=useState("");
+  const [ok,setOk]=useState("");
   const inp={width:"100%",boxSizing:"border-box",border:`1.5px solid ${C.lgray}`,borderRadius:10,padding:"9px 11px",fontSize:14,marginBottom:8,background:C.white};
   const primary={width:"100%",background:C.charcoal,color:C.pinkMed,border:"none",borderRadius:10,padding:"10px 12px",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8,opacity:busy?0.6:1};
-  const link={background:"none",border:"none",padding:0,color:C.lavDeep,fontSize:12,fontWeight:600,cursor:"pointer",textDecoration:"underline"};
-  const run=async fn=>{setBusy(true);setNote("");try{await fn();}catch(e){const f=Sync.friendly(e);setNote(f[0].toUpperCase()+f.slice(1)+".");}finally{setBusy(false);}};
+  const link={background:"none",border:"none",padding:0,color:C.lavDeep,fontSize:12,fontWeight:600,cursor:"pointer",textDecoration:"underline",textAlign:"left"};
+  const run=async fn=>{setBusy(true);setNote("");setOk("");try{await fn();}catch(e){const f=Sync.friendly(e);setNote(f[0].toUpperCase()+f.slice(1)+".");}finally{setBusy(false);}};
+  const validEmail=/\S+@\S+\.\S+/.test(email);
+  const err=note&&<div style={{fontSize:12,color:C.pinkDeep,fontWeight:600,marginBottom:8,lineHeight:1.4}}>{note}</div>;
+  const switchMode=m=>{setMode(m);setSent(false);setNote("");setPw("");};
 
   if(sync.state==="unavailable")return <div style={{fontSize:12,color:C.gray,lineHeight:1.45}}>Sync couldn't load right now (check your connection). Everything is still saved on this device.</div>;
 
   if(!sync.user){
+    const emailInput=<input style={inp} type="email" inputMode="email" autoComplete="username" placeholder="you@email.com" value={email} onChange={e=>setEmail(e.target.value)}/>;
+    if(mode==="password")return <div>
+      <div style={{fontSize:12,color:C.charcoal,lineHeight:1.45,marginBottom:10}}>Sign in with the password you set on your other device.</div>
+      {emailInput}
+      <input style={inp} type="password" autoComplete="current-password" placeholder="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&validEmail&&pw)e.currentTarget.nextSibling.click();}}/>
+      <button style={primary} disabled={busy||!validEmail||!pw} onClick={()=>run(async()=>{const e=email.trim();lsSet(META+"email",e);await Sync.signInPassword(e,pw);})}>{busy?"Signing in…":"Sign in"}</button>
+      {err}
+      <button style={link} onClick={()=>switchMode("link")}>Use an email link instead</button>
+    </div>;
     if(!sent)return <div>
       <div style={{fontSize:12,color:C.charcoal,lineHeight:1.45,marginBottom:10}}>Sign in to keep Chela HQ in sync across your phone and laptop.</div>
-      <input style={inp} type="email" inputMode="email" autoComplete="email" placeholder="you@email.com" value={email} onChange={e=>setEmail(e.target.value)}/>
-      <button style={primary} disabled={busy||!/\S+@\S+\.\S+/.test(email)} onClick={()=>run(async()=>{const e=email.trim();lsSet(META+"email",e);await Sync.sendLink(e);setSent(true);})}>{busy?"Sending…":"Email me a sign-in link"}</button>
-      {note&&<div style={{fontSize:12,color:C.pinkDeep,fontWeight:600}}>{note}</div>}
+      {emailInput}
+      <button style={primary} disabled={busy||!validEmail} onClick={()=>run(async()=>{const e=email.trim();lsSet(META+"email",e);await Sync.sendLink(e);setSent(true);})}>{busy?"Sending…":"Email me a sign-in link"}</button>
+      {err}
+      <button style={link} onClick={()=>switchMode("password")}>Sign in with a password instead</button>
     </div>;
     return <div>
-      <div style={{fontSize:12,color:C.charcoal,lineHeight:1.45,marginBottom:10}}>Check <b>{email}</b>. Tap the link in the email, or if it shows a code, enter it here:</div>
-      <input style={{...inp,letterSpacing:"0.3em",textAlign:"center",fontWeight:700}} inputMode="numeric" autoComplete="one-time-code" placeholder="code" value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,""))}/>
-      <button style={primary} disabled={busy||code.length<6} onClick={()=>run(()=>Sync.verifyCode(email.trim(),code))}>{busy?"Checking…":"Sign in with code"}</button>
-      {note&&<div style={{fontSize:12,color:C.pinkDeep,fontWeight:600,marginBottom:6}}>{note}</div>}
-      <button style={link} onClick={()=>{setSent(false);setCode("");setNote("");}}>Use a different email or resend</button>
+      <div style={{fontSize:12,color:C.charcoal,lineHeight:1.45,marginBottom:10}}>Check <b>{email}</b> (and your spam folder) for an email from Supabase, then tap the link to sign in. Open it in this same browser.</div>
+      <button style={link} onClick={()=>{setSent(false);setNote("");}}>Use a different email or resend</button>
+      <div style={{height:8}}/>
+      <button style={link} onClick={()=>switchMode("password")}>Sign in with a password instead</button>
     </div>;
   }
 
   const status=sync.state==="syncing"?"Syncing…":sync.state==="error"?"Couldn't sync: "+sync.error:`Synced ${ago(sync.lastSync)}`;
+  const hasPw=!!lsGet(META+"haspw");
   return <div>
     <div style={{fontSize:12,color:C.gray,marginBottom:2}}>Signed in as</div>
     <div style={{fontSize:13,fontWeight:700,color:C.charcoal,marginBottom:6,wordBreak:"break-all"}}>{sync.user.email}</div>
     <div style={{fontSize:12,fontWeight:600,color:sync.state==="error"?C.pinkDeep:C.mintDeep,marginBottom:10}}>{status}</div>
-    <div style={{display:"flex",gap:8}}>
+    <div style={{display:"flex",gap:8,marginBottom:12}}>
       <button style={{...primary,marginBottom:0}} disabled={sync.state==="syncing"} onClick={()=>Sync.syncNow()}>Sync now</button>
       <button style={{...primary,marginBottom:0,background:C.white,color:C.charcoal,border:`1.5px solid ${C.lgray}`}} onClick={()=>{if(window.confirm("Sign out of sync on this device? Your data stays here; it just stops syncing."))Sync.signOut();}}>Sign out</button>
     </div>
+    {!showPwForm?<button style={link} onClick={()=>{setShowPwForm(true);setOk("");setNote("");}}>{hasPw?"Change password":"Set a password for signing in on your phone"}</button>
+    :<div>
+      <input type="email" autoComplete="username" value={sync.user.email} readOnly style={{display:"none"}}/>
+      <input style={inp} type="password" autoComplete="new-password" placeholder="new password (8+ characters)" value={pw} onChange={e=>setPw(e.target.value)}/>
+      <button style={primary} disabled={busy||pw.length<8} onClick={()=>run(async()=>{await Sync.setPassword(pw);setPw("");setShowPwForm(false);setOk("Password saved. On your phone, choose “Sign in with a password instead.”");})}>{busy?"Saving…":"Save password"}</button>
+      {err}
+      <button style={link} onClick={()=>{setShowPwForm(false);setPw("");setNote("");}}>Cancel</button>
+    </div>}
+    {ok&&<div style={{fontSize:12,fontWeight:600,color:C.mintDeep,marginTop:8,lineHeight:1.4}}>{ok}</div>}
   </div>;
 }
 
